@@ -3,15 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <title>Управление рисками IT-проектов</title>
+    <link rel="stylesheet" href="styles.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 20px; }
-        .section { margin-bottom: 20px; }
-        table { border-collapse: collapse; width: 100%; }
-        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-        th { background-color: #f2f2f2; }
-        button { padding: 10px; margin: 5px; }
-    </style>
+    <script src="script.js" defer></script>
+    <script src="chart.js" defer></script>
 </head>
 <body>
     <h1>Управление рисками IT-проектов</h1>
@@ -19,39 +14,67 @@
     <!-- Ввод этапов -->
     <div class="section">
         <h2>Этапы проекта</h2>
+        <!-- Поля ввода для этапов (вне таблицы) -->
+        <div class="input-row">
+            <input type="text" id="stageName" placeholder="Название">
+            <input type="number" id="stageDuration" placeholder="Продолжительность (дни)">
+            <input type="number" id="stageCost" placeholder="Стоимость ($)">
+            <button onclick="addStage()">Добавить этап</button>
+        </div>
         <table id="stagesTable">
             <tr><th>Название</th><th>Продолжительность (дни)</th><th>Стоимость ($)</th></tr>
-            <tr><td><input type="text" id="stageName"></td>
-                <td><input type="number" id="stageDuration"></td>
-                <td><input type="number" id="stageCost"></td></tr>
         </table>
-        <button onclick="addStage()">Добавить этап</button>
         <button onclick="createModel()">Создать модель</button>
+        <button onclick="saveData()">Сохранить данные</button>
+        <button onclick="loadData()">Загрузить данные</button>
     </div>
 
     <!-- Ввод рисков -->
     <div class="section">
         <h2>Риски</h2>
+        <!-- Поля ввода для рисков (вне таблицы) -->
+        <div class="input-row">
+            <input type="text" id="riskName" placeholder="Название">
+            <input type="number" id="riskProb" step="0.1" min="0" max="1" placeholder="Вероятность (0-1)">
+            <input type="number" id="riskTime" placeholder="Влияние на время (дни)">
+            <input type="number" id="riskCost" placeholder="Влияние на стоимость ($)">
+            <select id="riskStrategy">
+                <option value="Ignore">Игнорировать</option>
+                <option value="Mitigate">Снизить</option>
+                <option value="Eliminate">Устранить</option>
+            </select>
+            <button onclick="addRisk()">Добавить риск</button>
+        </div>
         <table id="risksTable">
-            <tr><th>Название</th><th>Вероятность (0-1)</th><th>Влияние на время (дни)</th><th>Влияние на стоимость ($)</th></tr>
-            <tr><td><input type="text" id="riskName"></td>
-                <td><input type="number" id="riskProb" step="0.1" min="0" max="1"></td>
-                <td><input type="number" id="riskTime"></td>
-                <td><input type="number" id="riskCost"></td></tr>
+            <tr><th>Название</th><th>Вероятность (0-1)</th><th>Влияние на время (дни)</th><th>Влияние на стоимость ($)</th><th>Стратегия</th></tr>
         </table>
-        <button onclick="addRisk()">Добавить риск</button>
+    </div>
+
+    <!-- Типичные риски -->
+    <div class="section">
+        <h2>Типичные риски</h2>
+        <select id="typicalRisks">
+            <option value="">Выберите риск</option>
+            <option value="Задержка в разработке">Задержка в разработке</option>
+            <option value="Отсутствие сотрудников">Отсутствие сотрудников</option>
+            <option value="Задержка поставки оборудования">Задержка поставки оборудования</option>
+            <option value="Неправильное планирование">Неправильное планирование</option>
+            <option value="Кибератака">Кибератака</option>
+        </select>
+        <button onclick="addTypicalRisk(document.getElementById('typicalRisks').value)">Добавить типичный риск</button>
     </div>
 
     <!-- Управление рисками -->
     <div class="section">
-        <h2>Стратегия управления рисками</h2>
+        <h2>Общая стратегия управления рисками</h2>
         <label>Стратегия: </label>
         <select id="mitigationStrategy">
             <option value="Ignore">Игнорировать</option>
             <option value="Mitigate">Снизить</option>
+            <option value="Eliminate">Устранить</option>
         </select>
         <label>Бюджет на управление ($): </label>
-        <input type="number" id="mitigationBudget" value="5000">
+        <input type="number" id="mitigationBudget" value="10000">
         <button onclick="setMitigation()">Установить стратегию</button>
     </div>
 
@@ -64,125 +87,5 @@
             <tr><th>Название риска</th><th>Снижен</th><th>Влияние на время</th><th>Влияние на стоимость</th></tr>
         </table>
     </div>
-
-    <script>
-        let stages = [];
-        let risks = [];
-
-        function addStage() {
-            const name = document.getElementById('stageName').value;
-            const duration = parseFloat(document.getElementById('stageDuration').value);
-            const cost = parseFloat(document.getElementById('stageCost').value);
-            if (name && duration && cost) {
-                stages.push({ name, duration, cost });
-                updateStagesTable();
-            }
-        }
-
-        function updateStagesTable() {
-            const table = document.getElementById('stagesTable');
-            while (table.rows.length > 1) table.deleteRow(1);
-            stages.forEach(stage => {
-                const row = table.insertRow();
-                row.insertCell().textContent = stage.name;
-                row.insertCell().textContent = stage.duration;
-                row.insertCell().textContent = stage.cost;
-            });
-        }
-
-        function createModel() {
-            fetch('http://localhost:8080/create', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(stages)
-            }).then(response => response.text())
-              .then(text => alert(text));
-        }
-
-        function addRisk() {
-            const name = document.getElementById('riskName').value;
-            const probability = parseFloat(document.getElementById('riskProb').value);
-            const impactTime = parseFloat(document.getElementById('riskTime').value);
-            const impactCost = parseFloat(document.getElementById('riskCost').value);
-            if (name && probability && impactTime && impactCost) {
-                risks.push({ name, probability, impactTime, impactCost });
-                fetch('http://localhost:8080/addRisk', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name, probability, impactTime, impactCost })
-                }).then(response => response.text())
-                  .then(text => {
-                      alert(text);
-                      updateRisksTable();
-                  });
-            }
-        }
-
-        function updateRisksTable() {
-            const table = document.getElementById('risksTable');
-            while (table.rows.length > 1) table.deleteRow(1);
-            risks.forEach(risk => {
-                const row = table.insertRow();
-                row.insertCell().textContent = risk.name;
-                row.insertCell().textContent = risk.probability;
-                row.insertCell().textContent = risk.impactTime;
-                row.insertCell().textContent = risk.impactCost;
-            });
-        }
-
-        function setMitigation() {
-            const strategy = document.getElementById('mitigationStrategy').value;
-            const budget = parseFloat(document.getElementById('mitigationBudget').value);
-            fetch('http://localhost:8080/mitigation', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ strategy, budget })
-            }).then(response => response.text())
-              .then(text => alert(text));
-        }
-
-        function runSimulation() {
-            fetch('http://localhost:8080/run')
-                .then(() => fetch('http://localhost:8080/results'))
-                .then(response => response.json())
-                .then(data => {
-                    document.getElementById('resultsText').textContent = 
-                        `Общее время: ${data.totalTime} дней, Общая стоимость: $${data.totalCost}`;
-                    updateChart(data);
-                    updateRiskResults(data.risks);
-                });
-        }
-
-        let chart;
-
-        function updateChart(data) {
-            const ctx = document.getElementById('resultsChart').getContext('2d');
-            if (chart) chart.destroy();
-            chart = new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels: ['Общее время', 'Общая стоимость'],
-                    datasets: [{
-                        label: 'Метрики проекта',
-                        data: [data.totalTime, data.totalCost],
-                        backgroundColor: ['#36A2EB', '#FF6384']
-                    }]
-                },
-                options: { scales: { y: { beginAtZero: true } } }
-            });
-        }
-
-        function updateRiskResults(risks) {
-            const table = document.getElementById('riskResultsTable');
-            while (table.rows.length > 1) table.deleteRow(1);
-            risks.forEach(risk => {
-                const row = table.insertRow();
-                row.insertCell().textContent = risk.name;
-                row.insertCell().textContent = risk.mitigated ? "Да" : "Нет";
-                row.insertCell().textContent = risk.impactTime;
-                row.insertCell().textContent = risk.impactCost;
-            });
-        }
-    </script>
 </body>
 </html>
