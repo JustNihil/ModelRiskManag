@@ -279,18 +279,29 @@ import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import org.eclipse.jetty.servlets.CrossOriginFilter;
 import javax.servlet.DispatcherType;
 import java.util.EnumSet;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.SQLException;
 import org.eclipse.jetty.servlet.FilterHolder;
-
+import java.util.stream.Collectors;
 
 public class ServerManager {
     ArrayList<Stage> stages = new ArrayList<>();
     ArrayList<Risk> risks = new ArrayList<>();
     double totalTime, totalCost, mitigationBudget;
     String mitigationStrategy;
+
+    // Настройка PostgreSQL
+    private static final String DB_URL = "jdbc:postgresql://localhost:5432/risk_db";
+    private static final String DB_USER = "risk_user";
+    private static final String DB_PASSWORD = "235521";
+    private Connection dbConnection;
 
     class Stage {
         String name;
@@ -303,18 +314,30 @@ public class ServerManager {
         }
     }
 
-    class Risk {
+    static class Risk {
         String name;
         double probability;
         double impactTime;
         double impactCost;
         boolean mitigated;
+        String strategy;
+
         Risk(String name, double probability, double impactTime, double impactCost) {
             this.name = name;
             this.probability = probability;
             this.impactTime = impactTime;
             this.impactCost = impactCost;
             this.mitigated = false;
+            this.strategy = "Ignore";
+        }
+
+        Risk(String name, double probability, double impactTime, double impactCost, String strategy) {
+            this.name = name;
+            this.probability = probability;
+            this.impactTime = impactTime;
+            this.impactCost = impactCost;
+            this.mitigated = false;
+            this.strategy = strategy != null && !strategy.isEmpty() ? strategy : "Ignore";
         }
     }
 
@@ -323,6 +346,27 @@ public class ServerManager {
         double budget;
     }
 
+    private static final List<Risk> typicalRisks = Arrays.asList(
+        new Risk("Задержка в разработке", 0.4, 10, 5000, "Mitigate"),
+        new Risk("Отсутствие сотрудников", 0.3, 30, 10000, "Eliminate"),
+        new Risk("Задержка поставки оборудования", 0.3, 15, 7000, "Mitigate"),
+        new Risk("Неправильное планирование", 0.5, 20, 15000, "Mitigate"),
+        new Risk("Кибератака", 0.2, 15, 20000, "Eliminate")
+    );
+
+    public ServerManager() {
+        try {
+            Class.forName("org.postgresql.Driver");
+            dbConnection = DriverManager.getConnection(DB_URL, DB_USER, DB_PASSWORD);
+            System.out.println("Connected to PostgreSQL successfully.");
+        } catch (Exception e) {
+            System.out.println("Error connecting to PostgreSQL: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    public List<Risk> getTypicalRisks() { return typicalRisks; }
+
     public void startServer() {
         try {
             Server server = new Server(8080);
@@ -330,16 +374,16 @@ public class ServerManager {
             context.setContextPath("/");
             server.setHandler(context);
 
-            // Добавляем фильтр CORS
-            System.out.println("Adding CORS filter...");
-            context.addFilter(new FilterHolder(new CrossOriginFilter()), "/*", EnumSet.of(DispatcherType.REQUEST));
-            System.out.println("CORS filter added.");
+            // Настройка CORS с использованием метода
+            configureCORS(context);
 
             context.addServlet(new ServletHolder(new CreateModelServlet()), "/create");
             context.addServlet(new ServletHolder(new AddRiskServlet()), "/addRisk");
             context.addServlet(new ServletHolder(new SetMitigationServlet()), "/mitigation");
             context.addServlet(new ServletHolder(new RunServlet()), "/run");
             context.addServlet(new ServletHolder(new ResultsServlet()), "/results");
+            context.addServlet(new ServletHolder(new GetTypicalRisksServlet()), "/typicalRisks");
+            context.addServlet(new ServletHolder(new ExportServlet()), "/export");
 
             server.start();
             System.out.println("Server started on port 8080");
@@ -349,18 +393,34 @@ public class ServerManager {
         }
     }
 
+    // Метод для настройки CORS
+    private void configureCORS(ServletContextHandler context) {
+        FilterHolder corsFilter = new FilterHolder(new CrossOriginFilter());
+        corsFilter.setInitParameter(CrossOriginFilter.ALLOWED_ORIGINS_PARAM, "http://localhost:8000"); // Разрешенный источник
+        corsFilter.setInitParameter(CrossOriginFilter.ALLOWED_METHODS_PARAM, "GET,POST,PUT,DELETE,OPTIONS"); // Разрешенные методы
+        corsFilter.setInitParameter(CrossOriginFilter.ALLOWED_HEADERS_PARAM, "Content-Type,Authorization"); // Разрешенные заголовки
+        corsFilter.setInitParameter(CrossOriginFilter.ALLOW_CREDENTIALS_PARAM, "true"); // Поддержка учетных данных
+        corsFilter.setInitParameter(CrossOriginFilter.CHAIN_PREFLIGHT_PARAM, "false"); // Отключение предварительных запросов (опционально)
+        context.addFilter(corsFilter, "/*", EnumSet.of(DispatcherType.REQUEST));
+    }
+
+
+
     class CreateModelServlet extends HttpServlet {
         @Override
         protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws IOException {
             String json = req.getReader().lines().reduce("", (a, b) -> a + b);
             Gson gson = new Gson();
             List<Stage> inputStages = gson.fromJson(json, new TypeToken<List<Stage>>(){}.getType());
-            stages.clear();
-            risks.clear();
-            stages.addAll(inputStages);
-            totalTime = stages.stream().mapToDouble(s -> s.duration).sum();
-            totalCost = stages.stream().mapToDouble(s -> s.cost).sum();
-            resp.getWriter().write("Model created with " + stages.size() + " stages");
+            if (inputStages != null && !inputStages.isEmpty()) {
+                stages.addAll(inputStages);
+                totalTime = stages.stream().mapToDouble(s -> s.duration).sum();
+                totalCost = stages.stream().mapToDouble(s -> s.cost).sum();
+                uploadToPostgreSQL();
+                resp.getWriter().write("Модель создана с " + stages.size() + " этапами");
+            } else {
+                resp.sendError(HttpServletResponse.SC_BAD_REQUEST, "Некорректные данные этапов");
+            }
         }
     }
 
@@ -370,8 +430,17 @@ public class ServerManager {
             String json = req.getReader().lines().reduce("", (a, b) -> a + b);
             Gson gson = new Gson();
             Risk risk = gson.fromJson(json, Risk.class);
-            risks.add(risk);
-            resp.getWriter().write("Risk added: " + risk.name);
+            if (risk != null && risk.name != null && !risk.name.isEmpty() && 
+                !Double.isNaN(risk.probability) && !Double.isNaN(risk.impactTime) && !Double.isNaN(risk.impactCost)) {
+                if (risk.strategy == null || risk.strategy.isEmpty()) {
+                    risk.strategy = "Ignore";
+                }
+                risks.add(risk);
+                uploadToPostgreSQL();
+                resp.getWriter().write("Риск добавлен: " + risk.name);
+            } else {
+                resp.sendError(HttpServletResponse.SC_BAD_REQUEST, "Некорректные данные риска");
+            }
         }
     }
 
@@ -383,7 +452,8 @@ public class ServerManager {
             Mitigation mitigation = gson.fromJson(json, Mitigation.class);
             mitigationStrategy = mitigation.strategy;
             mitigationBudget = mitigation.budget;
-            resp.getWriter().write("Mitigation set: " + mitigationStrategy);
+            uploadToPostgreSQL();
+            resp.getWriter().write("Стратегия установлена: " + mitigationStrategy);
         }
     }
 
@@ -393,12 +463,18 @@ public class ServerManager {
             double mitigationCost = 0;
             for (Risk risk : risks) {
                 if (Math.random() < risk.probability) {
-                    if ("Mitigate".equals(mitigationStrategy) && mitigationBudget >= 500) {
+                    if ("Mitigate".equals(risk.strategy) && mitigationBudget >= 500) {
                         totalTime += risk.impactTime * 0.5;
                         totalCost += risk.impactCost * 0.5;
                         mitigationCost += 500;
                         risk.mitigated = true;
                         mitigationBudget -= 500;
+                    } else if ("Eliminate".equals(risk.strategy) && mitigationBudget >= 2000) {
+                        totalTime += 5;
+                        totalCost += risk.impactCost;
+                        mitigationCost += 2000;
+                        risk.mitigated = true;
+                        mitigationBudget -= 2000;
                     } else {
                         totalTime += risk.impactTime;
                         totalCost += risk.impactCost;
@@ -406,7 +482,8 @@ public class ServerManager {
                 }
             }
             totalCost += mitigationCost;
-            resp.getWriter().write("Simulation completed. Mitigation cost: $" + mitigationCost);
+            uploadToPostgreSQL(); // Сохранение в базу
+            resp.getWriter().write("Симуляция завершена. Стоимость управления: $" + mitigationCost);
         }
     }
 
@@ -420,15 +497,98 @@ public class ServerManager {
         }
     }
 
+    class GetTypicalRisksServlet extends HttpServlet {
+        @Override
+        protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws IOException {
+            Gson gson = new Gson();
+            String json = gson.toJson(typicalRisks);
+            resp.setContentType("application/json");
+            resp.getWriter().write(json);
+        }
+    }
+
+    class ExportServlet extends HttpServlet {
+        @Override
+        protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws IOException {
+            Gson gson = new Gson();
+            ExportData exportData = new ExportData(totalTime, totalCost, new ArrayList<>(stages), new ArrayList<>(risks), mitigationStrategy, mitigationBudget);
+            String json = gson.toJson(exportData);
+            resp.setContentType("application/json");
+            resp.getWriter().write(json);
+        }
+    }
+
     class Results {
         double totalTime;
         double totalCost;
         List<Risk> risks;
+
         Results(double totalTime, double totalCost, List<Risk> risks) {
             this.totalTime = totalTime;
             this.totalCost = totalCost;
             this.risks = risks;
         }
+    }
+
+    class ExportData {
+        double totalTime;
+        double totalCost;
+        List<Stage> stages;
+        List<Risk> risks;
+        String mitigationStrategy;
+        double mitigationBudget;
+
+        ExportData(double totalTime, double totalCost, List<Stage> stages, List<Risk> risks, String mitigationStrategy, double mitigationBudget) {
+            this.totalTime = totalTime;
+            this.totalCost = totalCost;
+            this.stages = stages;
+            this.risks = risks;
+            this.mitigationStrategy = mitigationStrategy;
+            this.mitigationBudget = mitigationBudget;
+        }
+    }
+
+    private void uploadToPostgreSQL() {
+        try {
+            dbConnection.createStatement().execute("TRUNCATE TABLE project_metrics, stages, risks");
+
+            String metricsSql = "INSERT INTO project_metrics (total_time, total_cost, mitigation_strategy, mitigation_budget) VALUES (?, ?, ?, ?)";
+            PreparedStatement metricsStmt = dbConnection.prepareStatement(metricsSql);
+            metricsStmt.setDouble(1, totalTime);
+            metricsStmt.setDouble(2, totalCost);
+            metricsStmt.setString(3, mitigationStrategy);
+            metricsStmt.setDouble(4, mitigationBudget);
+            metricsStmt.executeUpdate();
+
+            String stageSql = "INSERT INTO stages (name, duration, cost) VALUES (?, ?, ?)";
+            PreparedStatement stageStmt = dbConnection.prepareStatement(stageSql);
+            for (Stage stage : stages) {
+                stageStmt.setString(1, stage.name);
+                stageStmt.setDouble(2, stage.duration);
+                stageStmt.setDouble(3, stage.cost);
+                stageStmt.executeUpdate();
+            }
+
+            String riskSql = "INSERT INTO risks (name, probability, impact_time, impact_cost, mitigated, strategy) VALUES (?, ?, ?, ?, ?, ?)";
+            PreparedStatement riskStmt = dbConnection.prepareStatement(riskSql);
+            for (Risk risk : risks) {
+                riskStmt.setString(1, risk.name);
+                riskStmt.setDouble(2, risk.probability);
+                riskStmt.setDouble(3, risk.impactTime);
+                riskStmt.setDouble(4, risk.impactCost);
+                riskStmt.setBoolean(5, risk.mitigated);
+                riskStmt.setString(6, risk.strategy);
+                riskStmt.executeUpdate();
+            }
+        } catch (SQLException e) {
+            System.out.println("Error uploading to PostgreSQL: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    public static void main(String[] args) {
+        ServerManager server = new ServerManager();
+        server.startServer();
     }
 }]]></Text>
 		</JavaClass>
@@ -446,6 +606,11 @@ public class ServerManager {
 		</Resource>
 		<Resource>
 			<Path><![CDATA[jetty-servlets-9.4.31.v20200723.jar]]></Path>
+			<ReferencedFromUserCode>false</ReferencedFromUserCode>
+			<Location>FILE_SYSTEM</Location>
+		</Resource>
+		<Resource>
+			<Path><![CDATA[postgresql-42.6.0.jar]]></Path>
 			<ReferencedFromUserCode>false</ReferencedFromUserCode>
 			<Location>FILE_SYSTEM</Location>
 		</Resource>
@@ -476,6 +641,14 @@ public class ServerManager {
 		<ResourceReference>
 			<PackageName><![CDATA[model]]></PackageName>
 			<ClassName><![CDATA[jetty-all-9.4.31.v20200723-uber.jar]]></ClassName>
+		</ResourceReference>
+		<Imported>true</Imported>
+		<Folder>false</Folder>
+	</ClassPathEntry>
+	<ClassPathEntry>
+		<ResourceReference>
+			<PackageName><![CDATA[model]]></PackageName>
+			<ClassName><![CDATA[postgresql-42.6.0.jar]]></ClassName>
 		</ResourceReference>
 		<Imported>true</Imported>
 		<Folder>false</Folder>
