@@ -1,0 +1,6 @@
+postgresql://risk_user:235521@172.18.192.1:5432/risk_db
+
+cd C:\Users\dmitr\Models
+python -m http.server 8000
+
+SECRET_KEY = 'h230/hCEfyzefe5555HkJ51VqJQMpoPcw68vc7hrYwkrG1MAIy5at1'

@@ -22,12 +22,17 @@
 			<Name><![CDATA[Main]]></Name>
 			<AdditionalClassCode><![CDATA[ServerManager serverManager;
 
+
     @Override
     public void onStartup() {
         traceln("Initializing server...");
         serverManager = new ServerManager();
+
+
         serverManager.startServer();
-    }]]></AdditionalClassCode>
+    }
+ 
+]]></AdditionalClassCode>
 			<Generic>false</Generic>
 			<GenericParameter>
 				<Id>1740651594008</Id>
@@ -369,12 +374,35 @@ public class ServerManager {
 
     public void startServer() {
         try {
+            // Запуск Python HTTP-сервера
+            String workingDirectory = "C:/Users/dmitr/Models";
+            ProcessBuilder pb = new ProcessBuilder("python", "-m", "http.server", "8000");
+            pb.directory(new java.io.File(workingDirectory));
+            pb.redirectErrorStream(true);
+            Process process = pb.start();
+
+            // Читаем вывод Python-сервера для отладки
+            new Thread(() -> {
+                try (java.io.BufferedReader reader = new java.io.BufferedReader(
+                        new java.io.InputStreamReader(process.getInputStream()))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        System.out.println("Python Server: " + line);
+                    }
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }).start();
+
+            System.out.println("Python HTTP Server started on port 8000");
+
+            // Запуск Jetty-сервера
             Server server = new Server(8080);
             ServletContextHandler context = new ServletContextHandler(ServletContextHandler.SESSIONS);
             context.setContextPath("/");
             server.setHandler(context);
 
-            // Настройка CORS с использованием метода
+            // Настройка CORS
             configureCORS(context);
 
             context.addServlet(new ServletHolder(new CreateModelServlet()), "/create");
@@ -386,9 +414,9 @@ public class ServerManager {
             context.addServlet(new ServletHolder(new ExportServlet()), "/export");
 
             server.start();
-            System.out.println("Server started on port 8080");
+            System.out.println("Jetty Server started on port 8080");
         } catch (Exception e) {
-            System.out.println("Error starting server: " + e.getMessage());
+            System.out.println("Error starting servers: " + e.getMessage());
             e.printStackTrace();
         }
     }
@@ -396,15 +424,13 @@ public class ServerManager {
     // Метод для настройки CORS
     private void configureCORS(ServletContextHandler context) {
         FilterHolder corsFilter = new FilterHolder(new CrossOriginFilter());
-        corsFilter.setInitParameter(CrossOriginFilter.ALLOWED_ORIGINS_PARAM, "http://localhost:8000"); // Разрешенный источник
-        corsFilter.setInitParameter(CrossOriginFilter.ALLOWED_METHODS_PARAM, "GET,POST,PUT,DELETE,OPTIONS"); // Разрешенные методы
-        corsFilter.setInitParameter(CrossOriginFilter.ALLOWED_HEADERS_PARAM, "Content-Type,Authorization"); // Разрешенные заголовки
-        corsFilter.setInitParameter(CrossOriginFilter.ALLOW_CREDENTIALS_PARAM, "true"); // Поддержка учетных данных
-        corsFilter.setInitParameter(CrossOriginFilter.CHAIN_PREFLIGHT_PARAM, "false"); // Отключение предварительных запросов (опционально)
+        corsFilter.setInitParameter(CrossOriginFilter.ALLOWED_ORIGINS_PARAM, "http://localhost:8000");
+        corsFilter.setInitParameter(CrossOriginFilter.ALLOWED_METHODS_PARAM, "GET,POST,PUT,DELETE,OPTIONS");
+        corsFilter.setInitParameter(CrossOriginFilter.ALLOWED_HEADERS_PARAM, "Content-Type,Authorization");
+        corsFilter.setInitParameter(CrossOriginFilter.ALLOW_CREDENTIALS_PARAM, "true");
+        corsFilter.setInitParameter(CrossOriginFilter.CHAIN_PREFLIGHT_PARAM, "false");
         context.addFilter(corsFilter, "/*", EnumSet.of(DispatcherType.REQUEST));
     }
-
-
 
     class CreateModelServlet extends HttpServlet {
         @Override
@@ -482,7 +508,7 @@ public class ServerManager {
                 }
             }
             totalCost += mitigationCost;
-            uploadToPostgreSQL(); // Сохранение в базу
+            uploadToPostgreSQL();
             resp.getWriter().write("Симуляция завершена. Стоимость управления: $" + mitigationCost);
         }
     }
@@ -588,7 +614,7 @@ public class ServerManager {
 
     public static void main(String[] args) {
         ServerManager server = new ServerManager();
-        server.startServer();
+        server.startServer(); // Теперь оба сервера запускаются здесь
     }
 }]]></Text>
 		</JavaClass>

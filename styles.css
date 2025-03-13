@@ -1,54 +1,224 @@
+/* Подключение шрифта Roboto */
+@import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap');
+
 body {
-    font-family: Arial, sans-serif;
-    margin: 20px;
+    font-family: 'Roboto', sans-serif;
+    background-color: #2F3136;
+    color: #DCDDDE;
+    margin: 0;
+    padding: 20px;
 }
 
 .section {
+    background-color: #36393F;
+    border-radius: 8px;
+    padding: 20px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
     margin-bottom: 20px;
 }
 
-.input-row {
+/* Общий стиль для панелей ввода и кнопок */
+.panel {
+    background-color: #40444B;
+    border: 1px solid #202225;
+    border-radius: 4px;
+    padding: 10px;
     margin-bottom: 10px;
     display: flex;
-    gap: 5px;
     align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+    flex: 1; /* Растягивание по ширине */
+    min-width: 0; /* Предотвращает переполнение */
+}
+
+/* Стили для полей ввода внутри панелей */
+.panel input,
+.panel select,
+.panel button {
+    background-color: transparent;
+    border: none;
+    color: #DCDDDE;
+    font-size: 14px;
+    width: 100%;
+    padding: 0;
+    outline: none;
+}
+
+/* Стили для меток (подписей) */
+.panel label {
+    font-size: 12px;
+    color: #DCDDDE;
+    opacity: 0.8;
+    margin-right: 10px;
+    white-space: nowrap;
+}
+
+/* Строка ввода с панелями */
+.input-row {
+    display: flex;
+    gap: 15px; /* Промежутки между панелями */
+    margin-bottom: 20px; /* Отступ от таблицы */
+    margin-top: 0; /* Убираем верхний отступ */
+    flex-wrap: wrap; /* Адаптивность */
+}
+
+/* Контейнер для таблицы с отступами */
+.table-container {
+    margin-top: 20px; /* Отступ сверху от .input-row */
+    margin-bottom: 20px; /* Отступ снизу от .action-buttons */
+}
+
+/* Кнопки действий */
+.action-buttons {
+    display: flex;
+    gap: 15px; /* Промежутки между кнопками */
+    margin-top: 20px; /* Отступ сверху от таблицы */
+    flex-wrap: wrap;
+}
+
+.action-buttons button {
+    background-color: #7289DA;
+    color: #FFFFFF;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 500;
+    flex: 1; /* Растягиваются по ширине */
+    min-width: 0;
+    transition: background-color 0.2s, transform 0.1s;
+}
+
+.action-buttons button:hover {
+    background-color: #677BC4;
+    transform: translateY(-1px);
+}
+
+.action-buttons button:active {
+    background-color: #5B6EAE;
+    transform: translateY(1px);
 }
 
 input, select {
-    padding: 5px;
-    margin: 5px;
+    padding: 10px;
+    background-color: #40444B;
+    border: 1px solid #202225;
+    border-radius: 4px;
+    color: #DCDDDE;
+    font-size: 14px;
+    transition: border-color 0.2s;
+}
+
+input:focus, select:focus {
+    border-color: #7289DA;
+    outline: none;
+}
+
+button {
+    background-color: #7289DA;
+    color: #FFFFFF;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: background-color 0.2s, transform 0.1s;
+}
+
+button:hover {
+    background-color: #677BC4;
+    transform: translateY(-1px);
+}
+
+button:active {
+    background-color: #5B6EAE;
+    transform: translateY(1px);
 }
 
 table {
+    background-color: #36393F;
+    border-radius: 8px;
+    overflow: hidden;
     border-collapse: collapse;
     width: 100%;
 }
 
-th, td {
-    border: 1px solid #ddd;
-    padding: 8px;
-    text-align: left;
-}
-
 th {
-    background-color: #f2f2f2;
+    background-color: #7289DA;
+    color: #FFFFFF;
+    padding: 12px;
+    font-weight: 500;
+    text-align: center; /* Выравнивание заголовков по центру */
 }
 
-button {
-    padding: 10px;
-    margin: 5px;
+td {
+    padding: 12px;
+    border-bottom: 1px solid #2F3136;
+    text-align: center; /* Выравнивание данных по центру */
+}
+
+tr:nth-child(even) {
+    background-color: #2F3136;
+}
+
+tr:hover {
+    background-color: #40444B;
 }
 
 .dashboard {
-    background-color: #f9f9f9;
-    padding: 15px;
-    border-radius: 5px;
+    background-color: #36393F;
+    border: 2px solid #7289DA;
+    border-radius: 8px;
+    padding: 20px;
 }
 
+/* Заголовки */
+h1, h2 {
+    color: #FFFFFF;
+    font-weight: 700;
+    margin-bottom: 15px;
+    margin-top: 0; /* Убираем верхний отступ заголовков */
+}
+
+/* Дополнительные элементы дашборда */
 #dashboardSummary, #recommendations {
-    margin: 10px 0;
+    background-color: #2F3136;
     padding: 10px;
-    background-color: #fff;
-    border: 1px solid #ddd;
-    border-radius: 5px;
+    border-radius: 4px;
+    margin: 10px 0;
+}
+
+/* Группировка полей ввода с подписями */
+.input-group {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.input-group label {
+    font-size: 12px;
+    color: #DCDDDE;
+    opacity: 0.8;
+    margin-left: 5px;
+}
+
+/* Убираем верхнюю границу для таблиц без заголовков */
+#stagesTable tr:first-child td,
+#risksTable tr:first-child td {
+    border-top: none;
+}
+
+/* Адаптивность */
+@media (max-width: 768px) {
+    .input-row, .action-buttons {
+        flex-direction: column;
+    }
+    .panel, .action-buttons button {
+        width: 100%;
+    }
+    table {
+        font-size: 12px;
+    }
 }
