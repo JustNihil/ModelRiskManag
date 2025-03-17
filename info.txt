@@ -1,4 +1,5 @@
-postgresql://risk_user:235521@172.18.192.1:5432/risk_db
+postgresql://risk_user:235521@172.18.192.1:5435/risk_db
+postgresql://risk_user:235521@host.docker.internal:5435/risk_db
 
 cd C:\Users\dmitr\Models
 python -m http.server 8000

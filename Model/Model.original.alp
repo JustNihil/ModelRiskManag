@@ -283,10 +283,8 @@ import javax.servlet.http.HttpServletResponse;
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.List;
 import org.eclipse.jetty.servlets.CrossOriginFilter;
 import javax.servlet.DispatcherType;
@@ -297,14 +295,6 @@ import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import org.eclipse.jetty.servlet.FilterHolder;
 import java.util.stream.Collectors;
-import org.apache.http.Header;
-import org.apache.http.client.methods.CloseableHttpResponse;
-import org.apache.http.client.methods.HttpGet;
-import org.apache.http.client.methods.HttpPost;
-import org.apache.http.entity.StringEntity;
-import org.apache.http.impl.client.CloseableHttpClient;
-import org.apache.http.impl.client.HttpClients;
-import org.apache.http.util.EntityUtils;
 
 public class ServerManager {
     ArrayList<Stage> stages = new ArrayList<>();
@@ -313,7 +303,7 @@ public class ServerManager {
     String mitigationStrategy;
 
     // Настройка PostgreSQL
-    private static final String DB_URL = "jdbc:postgresql://localhost:5435/risk_db";
+    private static final String DB_URL = "jdbc:postgresql://localhost:5432/risk_db";
     private static final String DB_USER = "risk_user";
     private static final String DB_PASSWORD = "235521";
     private Connection dbConnection;
@@ -407,15 +397,14 @@ public class ServerManager {
             System.out.println("Python HTTP Server started on port 8000");
 
             // Запуск Jetty-сервера
-            Server server = new Server(8089);
+            Server server = new Server(8080);
             ServletContextHandler context = new ServletContextHandler(ServletContextHandler.SESSIONS);
-            context.setContextPath("/"); // Оставляем корневой контекст
+            context.setContextPath("/");
             server.setHandler(context);
 
-            // Настройка CORS для других сервлетов
+            // Настройка CORS
             configureCORS(context);
 
-            // Регистрация сервлетов
             context.addServlet(new ServletHolder(new CreateModelServlet()), "/create");
             context.addServlet(new ServletHolder(new AddRiskServlet()), "/addRisk");
             context.addServlet(new ServletHolder(new SetMitigationServlet()), "/mitigation");
@@ -423,18 +412,16 @@ public class ServerManager {
             context.addServlet(new ServletHolder(new ResultsServlet()), "/results");
             context.addServlet(new ServletHolder(new GetTypicalRisksServlet()), "/typicalRisks");
             context.addServlet(new ServletHolder(new ExportServlet()), "/export");
-            context.addServlet(new ServletHolder(new ProxyServlet()), "/api/*"); // Прокси для Superset API
 
             server.start();
-            System.out.println("Jetty Server started on port 8089");
-            server.join(); // Добавляем join(), чтобы сервер не завершался сразу
+            System.out.println("Jetty Server started on port 8080");
         } catch (Exception e) {
             System.out.println("Error starting servers: " + e.getMessage());
             e.printStackTrace();
         }
     }
 
-    // Метод для настройки CORS для других сервлетов
+    // Метод для настройки CORS
     private void configureCORS(ServletContextHandler context) {
         FilterHolder corsFilter = new FilterHolder(new CrossOriginFilter());
         corsFilter.setInitParameter(CrossOriginFilter.ALLOWED_ORIGINS_PARAM, "http://localhost:8000");
@@ -452,7 +439,6 @@ public class ServerManager {
             Gson gson = new Gson();
             List<Stage> inputStages = gson.fromJson(json, new TypeToken<List<Stage>>(){}.getType());
             if (inputStages != null && !inputStages.isEmpty()) {
-                stages.clear(); // Очищаем предыдущие этапы
                 stages.addAll(inputStages);
                 totalTime = stages.stream().mapToDouble(s -> s.duration).sum();
                 totalCost = stages.stream().mapToDouble(s -> s.cost).sum();
@@ -490,14 +476,10 @@ public class ServerManager {
             String json = req.getReader().lines().reduce("", (a, b) -> a + b);
             Gson gson = new Gson();
             Mitigation mitigation = gson.fromJson(json, Mitigation.class);
-            if (mitigation != null && mitigation.strategy != null && !mitigation.strategy.isEmpty()) {
-                mitigationStrategy = mitigation.strategy;
-                mitigationBudget = mitigation.budget;
-                uploadToPostgreSQL();
-                resp.getWriter().write("Стратегия установлена: " + mitigationStrategy);
-            } else {
-                resp.sendError(HttpServletResponse.SC_BAD_REQUEST, "Некорректные данные стратегии управления рисками");
-            }
+            mitigationStrategy = mitigation.strategy;
+            mitigationBudget = mitigation.budget;
+            uploadToPostgreSQL();
+            resp.getWriter().write("Стратегия установлена: " + mitigationStrategy);
         }
     }
 
@@ -562,146 +544,6 @@ public class ServerManager {
         }
     }
 
-    class ProxyServlet extends HttpServlet {
-        @Override
-        protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws IOException {
-            addCorsHeaders(resp);
-
-            // Формируем целевой URL для перенаправления на Superset
-            String pathInfo = req.getPathInfo() != null ? req.getPathInfo() : "";
-            // Добавляем префикс /api к пути, чтобы соответствовать Superset API
-            String targetUrl = "http://localhost:8088/api" + pathInfo;
-            System.out.println("Прокси: Обрабатываем POST запрос к " + targetUrl);
-
-            // Выводим все заголовки запроса для отладки
-            System.out.println("Полные заголовки запроса: ");
-            for (String headerName : Collections.list(req.getHeaderNames())) {
-                System.out.println(headerName + ": " + req.getHeader(headerName));
-            }
-
-            try (CloseableHttpClient httpClient = HttpClients.createDefault()) {
-                HttpPost proxyRequest = new HttpPost(targetUrl);
-
-                // Передаём заголовок Authorization, если он есть
-                String authHeader = req.getHeader("Authorization");
-                if (authHeader != null) {
-                    proxyRequest.setHeader("Authorization", authHeader);
-                    System.out.println("Передаём заголовок Authorization: " + authHeader);
-                }
-
-                // Читаем тело запроса
-                String requestBody = req.getReader().lines().collect(Collectors.joining());
-                System.out.println("Тело запроса: " + requestBody);
-
-                // Устанавливаем тело запроса с правильной кодировкой
-                proxyRequest.setEntity(new StringEntity(requestBody, StandardCharsets.UTF_8));
-
-                // Передаём Content-Type, если он указан
-                String contentType = req.getHeader("Content-Type");
-                if (contentType != null) {
-                    proxyRequest.setHeader("Content-Type", contentType);
-                    System.out.println("Передаём Content-Type: " + contentType);
-                } else {
-                    System.out.println("Content-Type не указан в запросе!");
-                    proxyRequest.setHeader("Content-Type", "application/json"); // Устанавливаем по умолчанию
-                }
-
-                // Выполняем запрос к Superset
-                try (CloseableHttpResponse proxyResponse = httpClient.execute(proxyRequest)) {
-                    int statusCode = proxyResponse.getStatusLine().getStatusCode();
-                    System.out.println("Ответ от целевого сервера: " + statusCode + " - " + proxyResponse.getStatusLine().getReasonPhrase());
-
-                    // Выводим все заголовки ответа для отладки
-                    System.out.println("Заголовки ответа: ");
-                    for (Header header : proxyResponse.getAllHeaders()) {
-                        System.out.println(header.getName() + ": " + header.getValue());
-                    }
-
-                    // Передаём статус и заголовки клиенту
-                    resp.setStatus(statusCode);
-                    Header contentTypeHeader = proxyResponse.getFirstHeader("Content-Type");
-                    resp.setContentType(contentTypeHeader != null ? contentTypeHeader.getValue() : "application/json");
-
-                    // Читаем и передаём тело ответа
-                    String responseBody = EntityUtils.toString(proxyResponse.getEntity());
-                    System.out.println("Тело ответа от Superset: " + responseBody);
-                    resp.getWriter().write(responseBody);
-                }
-            } catch (Exception e) {
-                System.out.println("Ошибка прокси: " + e.getMessage());
-                e.printStackTrace();
-                resp.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Ошибка прокси: " + e.getMessage());
-            }
-        }
-
-        @Override
-        protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws IOException {
-            addCorsHeaders(resp);
-
-            // Формируем целевой URL для GET-запроса
-            String pathInfo = req.getPathInfo() != null ? req.getPathInfo() : "";
-            // Добавляем префикс /api к пути, чтобы соответствовать Superset API
-            String targetUrl = "http://localhost:8088/api" + pathInfo;
-            System.out.println("Прокси: Обрабатываем GET запрос к " + targetUrl);
-
-            // Выводим все заголовки запроса для отладки
-            System.out.println("Полные заголовки запроса: ");
-            for (String headerName : Collections.list(req.getHeaderNames())) {
-                System.out.println(headerName + ": " + req.getHeader(headerName));
-            }
-
-            try (CloseableHttpClient httpClient = HttpClients.createDefault()) {
-                HttpGet proxyRequest = new HttpGet(targetUrl);
-
-                // Передаём заголовок Authorization, если он есть
-                String authHeader = req.getHeader("Authorization");
-                if (authHeader != null) {
-                    proxyRequest.setHeader("Authorization", authHeader);
-                    System.out.println("Передаём заголовок Authorization: " + authHeader);
-                }
-
-                // Выполняем запрос к Superset
-                try (CloseableHttpResponse proxyResponse = httpClient.execute(proxyRequest)) {
-                    int statusCode = proxyResponse.getStatusLine().getStatusCode();
-                    System.out.println("Ответ от целевого сервера: " + statusCode + " - " + proxyResponse.getStatusLine().getReasonPhrase());
-
-                    // Выводим все заголовки ответа для отладки
-                    System.out.println("Заголовки ответа: ");
-                    for (Header header : proxyResponse.getAllHeaders()) {
-                        System.out.println(header.getName() + ": " + header.getValue());
-                    }
-
-                    // Передаём статус и заголовки клиенту
-                    resp.setStatus(statusCode);
-                    Header contentTypeHeader = proxyResponse.getFirstHeader("Content-Type");
-                    resp.setContentType(contentTypeHeader != null ? contentTypeHeader.getValue() : "application/json");
-
-                    // Читаем и передаём тело ответа
-                    String responseBody = EntityUtils.toString(proxyResponse.getEntity());
-                    System.out.println("Тело ответа от Superset: " + responseBody);
-                    resp.getWriter().write(responseBody);
-                }
-            } catch (Exception e) {
-                System.out.println("Ошибка прокси: " + e.getMessage());
-                e.printStackTrace();
-                resp.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Ошибка прокси: " + e.getMessage());
-            }
-        }
-
-        @Override
-        protected void doOptions(HttpServletRequest req, HttpServletResponse resp) throws IOException {
-            addCorsHeaders(resp);
-            resp.setStatus(HttpServletResponse.SC_OK);
-        }
-
-        private void addCorsHeaders(HttpServletResponse resp) {
-            resp.setHeader("Access-Control-Allow-Origin", "http://localhost:8000");
-            resp.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-            resp.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-            resp.setHeader("Access-Control-Allow-Credentials", "true");
-        }
-    }
-
     class Results {
         double totalTime;
         double totalCost;
@@ -734,11 +576,6 @@ public class ServerManager {
 
     private void uploadToPostgreSQL() {
         try {
-            if (dbConnection == null || dbConnection.isClosed()) {
-                System.out.println("Database connection is closed. Reconnecting...");
-                dbConnection = DriverManager.getConnection(DB_URL, DB_USER, DB_PASSWORD);
-            }
-
             dbConnection.createStatement().execute("TRUNCATE TABLE project_metrics, stages, risks");
 
             String metricsSql = "INSERT INTO project_metrics (total_time, total_cost, mitigation_strategy, mitigation_budget) VALUES (?, ?, ?, ?)";
@@ -777,7 +614,7 @@ public class ServerManager {
 
     public static void main(String[] args) {
         ServerManager server = new ServerManager();
-        server.startServer();
+        server.startServer(); // Теперь оба сервера запускаются здесь
     }
 }]]></Text>
 		</JavaClass>
@@ -800,21 +637,6 @@ public class ServerManager {
 		</Resource>
 		<Resource>
 			<Path><![CDATA[postgresql-42.6.0.jar]]></Path>
-			<ReferencedFromUserCode>false</ReferencedFromUserCode>
-			<Location>FILE_SYSTEM</Location>
-		</Resource>
-		<Resource>
-			<Path><![CDATA[httpclient-4.5.14.jar]]></Path>
-			<ReferencedFromUserCode>false</ReferencedFromUserCode>
-			<Location>FILE_SYSTEM</Location>
-		</Resource>
-		<Resource>
-			<Path><![CDATA[httpcore-4.4.16.jar]]></Path>
-			<ReferencedFromUserCode>false</ReferencedFromUserCode>
-			<Location>FILE_SYSTEM</Location>
-		</Resource>
-		<Resource>
-			<Path><![CDATA[commons-logging-1.2.jar]]></Path>
 			<ReferencedFromUserCode>false</ReferencedFromUserCode>
 			<Location>FILE_SYSTEM</Location>
 		</Resource>
@@ -853,30 +675,6 @@ public class ServerManager {
 		<ResourceReference>
 			<PackageName><![CDATA[model]]></PackageName>
 			<ClassName><![CDATA[postgresql-42.6.0.jar]]></ClassName>
-		</ResourceReference>
-		<Imported>true</Imported>
-		<Folder>false</Folder>
-	</ClassPathEntry>
-	<ClassPathEntry>
-		<ResourceReference>
-			<PackageName><![CDATA[model]]></PackageName>
-			<ClassName><![CDATA[httpclient-4.5.14.jar]]></ClassName>
-		</ResourceReference>
-		<Imported>true</Imported>
-		<Folder>false</Folder>
-	</ClassPathEntry>
-	<ClassPathEntry>
-		<ResourceReference>
-			<PackageName><![CDATA[model]]></PackageName>
-			<ClassName><![CDATA[httpcore-4.4.16.jar]]></ClassName>
-		</ResourceReference>
-		<Imported>true</Imported>
-		<Folder>false</Folder>
-	</ClassPathEntry>
-	<ClassPathEntry>
-		<ResourceReference>
-			<PackageName><![CDATA[model]]></PackageName>
-			<ClassName><![CDATA[commons-logging-1.2.jar]]></ClassName>
 		</ResourceReference>
 		<Imported>true</Imported>
 		<Folder>false</Folder>

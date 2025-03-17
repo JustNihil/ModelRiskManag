@@ -23,21 +23,21 @@ export function fetchDashboardData(maxAttempts = 3, attempt = 1) {
 
 function proceedWithFetch(token, maxAttempts, attempt) {
     return Promise.all([
-        fetch('http://localhost:8088/api/v1/chart/121', {
+        fetch('http://localhost:8089/api/v1/chart/121', {
             headers: { 'Authorization': `Bearer ${token}` },
             signal: AbortSignal.timeout(5000)
         }).then(res => {
             if (!res.ok) throw new Error(`Ошибка при получении метрик: ${res.status} - ${res.statusText}`);
             return res.json();
         }),
-        fetch('http://localhost:8088/api/v1/chart/122', {
+        fetch('http://localhost:8089/api/v1/chart/122', {
             headers: { 'Authorization': `Bearer ${token}` },
             signal: AbortSignal.timeout(5000)
         }).then(res => {
             if (!res.ok) throw new Error(`Ошибка при получении рисков: ${res.status} - ${res.statusText}`);
             return res.json();
         }),
-        fetch('http://localhost:8088/api/v1/dashboard/13', {
+        fetch('http://localhost:8089/api/v1/dashboard/12', {
             headers: { 'Authorization': `Bearer ${token}` },
             signal: AbortSignal.timeout(5000)
         }).then(res => {
@@ -51,7 +51,7 @@ function proceedWithFetch(token, maxAttempts, attempt) {
     .catch(error => {
         console.error("Ошибка при загрузке данных дашборда:", error);
         if ((error.message.includes('422') || error.message.includes('401')) && attempt < maxAttempts) {
-            console.warn('Проблема с авторизацией, запрашиваю новый токен...');
+            console.warn('Проблема, запрашиваю новый токен...');
             return fetchToken().then(newToken => {
                 if (newToken) {
                     localStorage.setItem('superset_token', newToken);
@@ -73,7 +73,7 @@ export async function createModel(stages, token) {
         return;
     }
     try {
-        const response = await fetch('http://localhost:8080/create', {
+        const response = await fetch('http://localhost:8089/create', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -96,7 +96,7 @@ export async function createModel(stages, token) {
 
 export async function addRisk(risk) {
     try {
-        const response = await fetch('http://localhost:8080/addRisk', {
+        const response = await fetch('http://localhost:8089/addRisk', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(risk)
@@ -113,7 +113,7 @@ export async function addRisk(risk) {
 
 export async function setMitigation(strategy, budget) {
     try {
-        const response = await fetch('http://localhost:8080/mitigation', {
+        const response = await fetch('http://localhost:8089/mitigation', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ strategy, budget })

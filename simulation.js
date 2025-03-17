@@ -16,7 +16,7 @@ export async function runSimulation() {
         const text = await response.text();
         console.log("Симуляция завершена:", text);
 
-        const resultsResponse = await fetch('http://localhost:8080/results', {
+        const resultsResponse = await fetch('http://localhost:8089/results', {
             method: 'GET',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
         });
