@@ -5,3 +5,6 @@ cd C:\Users\dmitr\Models
 python -m http.server 8000
 
 SECRET_KEY = 'h230/hCEfyzefe5555HkJ51VqJQMpoPcw68vc7hrYwkrG1MAIy5at1'
+
+"C:/Users/dmitr/AppData/Local/Programs/Python/Python313/python.exe";
+"C:/Users/dmitr/Models/superset_cli.py";

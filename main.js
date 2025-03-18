@@ -5,23 +5,21 @@ import { addCustomRisk, addTypicalRisk } from './risks.js';
 import { runSimulation, setMitigation } from './simulation.js';
 import { saveData, loadData } from './storage.js';
 import { createModel } from './api.js';
-import { fetchToken } from './auth.js';
 
 document.addEventListener('DOMContentLoaded', () => {
     let updateIntervalId = null;
 
-    // Привязка функций к глобальному объекту window для использования в HTML
     window.startUpdates = function() {
         const intervalInput = document.getElementById('updateInterval');
         const interval = parseInt(intervalInput.value) * 1000;
-        if (interval < 10000) {
-            alert("Интервал должен быть не менее 10 секунд.");
+        if (isNaN(interval) || interval < 10000) {
+            alert("Интервал должен быть числом и не менее 10 секунд.");
             return;
         }
         if (updateIntervalId) clearInterval(updateIntervalId);
-        fetchDashboardData().then(data => data && updateDashboard(data.metrics, data.risks, data.dashboardData));
+        fetchDashboardData().then(data => data && updateDashboard(data.metrics, data.risks, data.dashboardData)).catch(() => {});
         updateIntervalId = setInterval(() => {
-            fetchDashboardData().then(data => data && updateDashboard(data.metrics, data.risks, data.dashboardData));
+            fetchDashboardData().then(data => data && updateDashboard(data.metrics, data.risks, data.dashboardData)).catch(() => {});
         }, interval);
         alert(`Обновление запущено с интервалом ${interval / 1000} секунд.`);
     };
@@ -36,24 +34,17 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    window.addStage = addStage; // Экспорт функции для добавления этапов
-    window.addRisk = addCustomRisk; // Экспорт функции для добавления рисков
-    window.addTypicalRisk = addTypicalRisk; // Экспорт функции для типичных рисков
+    window.addStage = addStage;
+    window.addRisk = addCustomRisk;
+    window.addTypicalRisk = addTypicalRisk;
     window.createModel = async () => {
-        const token = await fetchToken() || localStorage.getItem('superset_token');
-        if (token) {
-            await createModel(stages, token);
-            fetchDashboardData().then(data => data && updateDashboard(data.metrics, data.risks, data.dashboardData));
-        }
+        const success = await createModel(stages);
+        if (success) fetchDashboardData().then(data => data && updateDashboard(data.metrics, data.risks, data.dashboardData)).catch(() => {});
     };
-    window.setMitigation = () => {
-        setMitigation();
-        fetchDashboardData().then(data => data && updateDashboard(data.metrics, data.risks, data.dashboardData));
+    window.setMitigation = async () => {
+        await setMitigation();
     };
-    window.runSimulation = runSimulation; // Экспорт функции симуляции
-    window.saveData = saveData; // Экспорт функции сохранения
-    window.loadData = loadData; // Экспорт функции загрузки
-
-    // Инициализация (раскомментируй, если нужно автоматическое обновление при загрузке)
-    // fetchDashboardData().then(data => data && updateDashboard(data.metrics, data.risks, data.dashboardData));
+    window.runSimulation = runSimulation;
+    window.saveData = saveData;
+    window.loadData = loadData;
 });

@@ -309,9 +309,9 @@ public class ServerManager {
     private static final String DB_URL = "jdbc:postgresql://localhost:5435/risk_db";
     private static final String DB_USER = "risk_user";
     private static final String DB_PASSWORD = "235521";
-    private static final String PYTHON_PATH = "C:/Users/dmitr/AppData/Local/Programs/Python/Python313/python.exe"; // Укажите ваш путь к Python
-    private static final String PYTHON_SERVER_DIR = "C:/Users/dmitr/Models"; // Укажите вашу рабочую директорию
-    private static final String SUPERSET_CLI_PATH = "C:/Users/dmitr/Models/superset_cli.py"; // Укажите полный путь к superset_cli.py
+    private static final String PYTHON_PATH = "C:/Users/dmitr/AppData/Local/Programs/Python/Python313/python.exe"; // Обновлённый путь
+    private static final String PYTHON_SERVER_DIR = "C:/Users/dmitr/Models"; // Ваша рабочая директория
+    private static final String SUPERSET_CLI_PATH = "C:/Users/dmitr/Models/superset_cli.py"; // Ваш путь к скрипту
     private Connection dbConnection;
 
     class Stage {
@@ -370,6 +370,7 @@ public class ServerManager {
     private String runPythonCommand(String[] command) throws IOException, InterruptedException {
         System.out.println("Запуск команды: " + String.join(" ", command));
         ProcessBuilder pb = new ProcessBuilder(command);
+        pb.directory(new java.io.File(PYTHON_SERVER_DIR)); // Укажи рабочую директорию
         pb.redirectErrorStream(true);
         Process process = pb.start();
         String output = new java.io.BufferedReader(
@@ -380,11 +381,21 @@ public class ServerManager {
         ).lines().collect(Collectors.joining("\n"));
         int exitCode = process.waitFor();
         System.out.println("Вывод Python: " + output);
-        System.out.println("Ошибка Python: " + error);
+        System.out.println("Ошибка Python (stderr): " + error);
         if (exitCode != 0) {
             throw new IOException("Python script failed with exit code " + exitCode + ": " + error + " | Output: " + output);
         }
         return output;
+    }
+    
+    private String runDockerSupersetCommand(String[] supersetCommand) throws IOException, InterruptedException {
+        List<String> command = new ArrayList<>();
+        command.add("docker");
+        command.add("exec");
+        command.add("superset_app"); // Замени на имя твоего контейнера Superset
+        command.add("superset");
+        command.addAll(Arrays.asList(supersetCommand));
+        return runPythonCommand(command.toArray(new String[0]));
     }
 
     private Process startPythonServer() throws IOException {
@@ -613,22 +624,18 @@ public class ServerManager {
         protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws IOException {
             addCorsHeaders(resp);
             try {
-                String[] dashboardCmd = {PYTHON_PATH, SUPERSET_CLI_PATH, "export_dashboards"};
+                System.out.println("Начинаем экспорт метрик...");
                 String[] metricsCmd = {PYTHON_PATH, SUPERSET_CLI_PATH, "export_metrics"};
-                String[] risksCmd = {PYTHON_PATH, SUPERSET_CLI_PATH, "export_risks"};
-
-                String dashboardJson = runPythonCommand(dashboardCmd);
                 String metricsJson = runPythonCommand(metricsCmd);
+
+                System.out.println("Начинаем экспорт рисков...");
+                String[] risksCmd = {PYTHON_PATH, SUPERSET_CLI_PATH, "export_risks"};
                 String risksJson = runPythonCommand(risksCmd);
 
                 Gson gson = new Gson();
-                Object dashboardData = gson.fromJson(dashboardJson, Object.class);
                 Object metrics = gson.fromJson(metricsJson, Object.class);
                 List<Risk> risksData = gson.fromJson(risksJson, new TypeToken<List<Risk>>(){}.getType());
 
-                if (dashboardData instanceof java.util.Map && ((java.util.Map<?, ?>) dashboardData).containsKey("error")) {
-                    throw new Exception("Ошибка экспорта дашбордов: " + ((java.util.Map<?, ?>) dashboardData).get("error"));
-                }
                 if (metrics instanceof java.util.Map && ((java.util.Map<?, ?>) metrics).containsKey("error")) {
                     throw new Exception("Ошибка экспорта метрик: " + ((java.util.Map<?, ?>) metrics).get("error"));
                 }
@@ -637,19 +644,15 @@ public class ServerManager {
                 }
 
                 resp.setContentType("application/json");
-                resp.getWriter().write(gson.toJson(new DashboardData(metrics, risksData, dashboardData)));
+                resp.getWriter().write(gson.toJson(new DashboardData(metrics, risksData, null))); // dashboardData = null
             } catch (Exception e) {
+                System.err.println("Ошибка в ExportDashboardServlet: " + e.getMessage());
+                e.printStackTrace();
                 resp.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Ошибка экспорта: " + e.getMessage());
             }
         }
-
-        @Override
-        protected void doOptions(HttpServletRequest req, HttpServletResponse resp) throws IOException {
-            addCorsHeaders(resp);
-            resp.setStatus(HttpServletResponse.SC_OK);
-        }
     }
-
+    
     class ProxyServlet extends HttpServlet {
         @Override
         protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws IOException {
