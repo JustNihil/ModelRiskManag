@@ -4,6 +4,10 @@ export function updateDashboard(metrics, risks, dashboardData) {
     const riskTable = document.getElementById('riskResultsTable');
     const recDiv = document.getElementById('recommendations');
 
+    // Отладка: выводим полученные данные
+    console.log("Полученные метрики:", metrics);
+    console.log("Полученные риски:", risks);
+
     if (!metrics || (!Array.isArray(metrics) && typeof metrics !== 'object')) {
         console.error("Метрики не найдены или результат пустой:", metrics);
         summary.innerHTML = "<p>Ошибка: Метрики не загружены.</p>";
@@ -57,8 +61,9 @@ export function updateDashboard(metrics, risks, dashboardData) {
         options: { scales: { y: { beginAtZero: true } } }
     });
 
+    // Очистка таблицы рисков
     while (riskTable.rows.length > 1) riskTable.deleteRow(1);
-    if (risks && Array.isArray(risks)) {
+    if (risks && Array.isArray(risks) && risks.length > 0) {
         risks.forEach(risk => {
             const row = riskTable.insertRow();
             row.insertCell().textContent = risk.name || 'N/A';
@@ -67,6 +72,12 @@ export function updateDashboard(metrics, risks, dashboardData) {
             row.insertCell().textContent = risk.impact_cost || 0;
             row.insertCell().textContent = risk.strategy || "Игнорировать (по умолчанию)";
         });
+    } else {
+        console.warn("Риски не найдены или массив пуст:", risks);
+        const row = riskTable.insertRow();
+        const cell = row.insertCell();
+        cell.colSpan = 5;
+        cell.textContent = "Риски отсутствуют";
     }
 
     const recommendations = generateRecommendations(metricsArray, risks || []);

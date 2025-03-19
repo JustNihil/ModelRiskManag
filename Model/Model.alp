@@ -291,14 +291,6 @@ import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.util.stream.Collectors;
-import org.apache.http.Header;
-import org.apache.http.client.methods.CloseableHttpResponse;
-import org.apache.http.client.methods.HttpGet;
-import org.apache.http.client.methods.HttpPost;
-import org.apache.http.entity.StringEntity;
-import org.apache.http.impl.client.CloseableHttpClient;
-import org.apache.http.impl.client.HttpClients;
-import org.apache.http.util.EntityUtils;
 
 public class ServerManager {
     ArrayList<Stage> stages = new ArrayList<>();
@@ -309,9 +301,9 @@ public class ServerManager {
     private static final String DB_URL = "jdbc:postgresql://localhost:5435/risk_db";
     private static final String DB_USER = "risk_user";
     private static final String DB_PASSWORD = "235521";
-    private static final String PYTHON_PATH = "C:/Users/dmitr/AppData/Local/Programs/Python/Python313/python.exe"; // Укажите ваш путь к Python
-    private static final String PYTHON_SERVER_DIR = "C:/Users/dmitr/Models"; // Укажите вашу рабочую директорию
-    private static final String SUPERSET_CLI_PATH = "C:/Users/dmitr/Models/superset_cli.py"; // Укажите полный путь к superset_cli.py
+    private static final String PYTHON_PATH = "C:/Users/dmitr/AppData/Local/Programs/Python/Python313/python.exe";
+    private static final String PYTHON_SERVER_DIR = "C:/Users/dmitr/Models";
+    private static final String SUPERSET_CLI_PATH = "C:/Users/dmitr/Models/superset_cli.py";
     private Connection dbConnection;
 
     class Stage {
@@ -348,6 +340,12 @@ public class ServerManager {
         double budget;
     }
 
+    // Класс для десериализации данных от фронтенда
+    class ModelData {
+        List<Stage> stages;
+        List<Risk> risks;
+    }
+
     private static final List<Risk> typicalRisks = Arrays.asList(
         new Risk("Задержка в разработке", 0.4, 10, 5000, "Mitigate"),
         new Risk("Отсутствие сотрудников", 0.3, 30, 10000, "Eliminate"),
@@ -370,6 +368,7 @@ public class ServerManager {
     private String runPythonCommand(String[] command) throws IOException, InterruptedException {
         System.out.println("Запуск команды: " + String.join(" ", command));
         ProcessBuilder pb = new ProcessBuilder(command);
+        pb.directory(new java.io.File(PYTHON_SERVER_DIR));
         pb.redirectErrorStream(true);
         Process process = pb.start();
         String output = new java.io.BufferedReader(
@@ -380,7 +379,7 @@ public class ServerManager {
         ).lines().collect(Collectors.joining("\n"));
         int exitCode = process.waitFor();
         System.out.println("Вывод Python: " + output);
-        System.out.println("Ошибка Python: " + error);
+        System.out.println("Ошибка Python (stderr): " + error);
         if (exitCode != 0) {
             throw new IOException("Python script failed with exit code " + exitCode + ": " + error + " | Output: " + output);
         }
@@ -426,7 +425,6 @@ public class ServerManager {
             context.addServlet(new ServletHolder(new ResultsServlet()), "/results");
             context.addServlet(new ServletHolder(new GetTypicalRisksServlet()), "/typicalRisks");
             context.addServlet(new ServletHolder(new ExportDashboardServlet()), "/exportDashboard");
-            context.addServlet(new ServletHolder(new ProxyServlet()), "/api/*");
 
             server.start();
             System.out.println("Jetty Server started on port 8089");
@@ -446,15 +444,21 @@ public class ServerManager {
             addCorsHeaders(resp);
             try {
                 String json = req.getReader().lines().reduce("", (a, b) -> a + b);
+                System.out.println("Полученный JSON: " + json); // Для отладки
                 Gson gson = new Gson();
-                List<Stage> inputStages = gson.fromJson(json, new TypeToken<List<Stage>>(){}.getType());
-                if (inputStages != null && !inputStages.isEmpty()) {
+                ModelData modelData = gson.fromJson(json, ModelData.class);
+                if (modelData != null && modelData.stages != null && !modelData.stages.isEmpty()) {
                     stages.clear();
-                    stages.addAll(inputStages);
+                    risks.clear();
+                    stages.addAll(modelData.stages);
+                    if (modelData.risks != null) {
+                        risks.addAll(modelData.risks);
+                    }
                     totalTime = stages.stream().mapToDouble(s -> s.duration).sum();
                     totalCost = stages.stream().mapToDouble(s -> s.cost).sum();
+                    dbConnection.createStatement().execute("TRUNCATE TABLE project_metrics, stages, risks");
                     uploadToPostgreSQL();
-                    resp.getWriter().write("Модель создана с " + stages.size() + " этапами");
+                    resp.getWriter().write("Модель создана с " + stages.size() + " этапами и " + risks.size() + " рисками");
                 } else {
                     resp.sendError(HttpServletResponse.SC_BAD_REQUEST, "Некорректные данные этапов");
                 }
@@ -613,22 +617,18 @@ public class ServerManager {
         protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws IOException {
             addCorsHeaders(resp);
             try {
-                String[] dashboardCmd = {PYTHON_PATH, SUPERSET_CLI_PATH, "export_dashboards"};
+                System.out.println("Начинаем экспорт метрик...");
                 String[] metricsCmd = {PYTHON_PATH, SUPERSET_CLI_PATH, "export_metrics"};
-                String[] risksCmd = {PYTHON_PATH, SUPERSET_CLI_PATH, "export_risks"};
-
-                String dashboardJson = runPythonCommand(dashboardCmd);
                 String metricsJson = runPythonCommand(metricsCmd);
+
+                System.out.println("Начинаем экспорт рисков...");
+                String[] risksCmd = {PYTHON_PATH, SUPERSET_CLI_PATH, "export_risks"};
                 String risksJson = runPythonCommand(risksCmd);
 
                 Gson gson = new Gson();
-                Object dashboardData = gson.fromJson(dashboardJson, Object.class);
                 Object metrics = gson.fromJson(metricsJson, Object.class);
                 List<Risk> risksData = gson.fromJson(risksJson, new TypeToken<List<Risk>>(){}.getType());
 
-                if (dashboardData instanceof java.util.Map && ((java.util.Map<?, ?>) dashboardData).containsKey("error")) {
-                    throw new Exception("Ошибка экспорта дашбордов: " + ((java.util.Map<?, ?>) dashboardData).get("error"));
-                }
                 if (metrics instanceof java.util.Map && ((java.util.Map<?, ?>) metrics).containsKey("error")) {
                     throw new Exception("Ошибка экспорта метрик: " + ((java.util.Map<?, ?>) metrics).get("error"));
                 }
@@ -637,8 +637,10 @@ public class ServerManager {
                 }
 
                 resp.setContentType("application/json");
-                resp.getWriter().write(gson.toJson(new DashboardData(metrics, risksData, dashboardData)));
+                resp.getWriter().write(gson.toJson(new DashboardData(metrics, risksData, null)));
             } catch (Exception e) {
+                System.err.println("Ошибка в ExportDashboardServlet: " + e.getMessage());
+                e.printStackTrace();
                 resp.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Ошибка экспорта: " + e.getMessage());
             }
         }
@@ -650,102 +652,12 @@ public class ServerManager {
         }
     }
 
-    class ProxyServlet extends HttpServlet {
-        @Override
-        protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws IOException {
-            addCorsHeaders(resp);
-            String pathInfo = req.getPathInfo() != null ? req.getPathInfo() : "";
-            String targetUrl = "http://localhost:8088/api" + pathInfo;
-            System.out.println("Прокси: Обрабатываем POST запрос к " + targetUrl);
-
-            try (CloseableHttpClient httpClient = HttpClients.createDefault()) {
-                HttpPost proxyRequest = new HttpPost(targetUrl);
-
-                String authHeader = req.getHeader("Authorization");
-                if (authHeader != null) {
-                    proxyRequest.setHeader("Authorization", authHeader);
-                    System.out.println("Передаём заголовок Authorization: " + authHeader);
-                }
-
-                String requestBody = req.getReader().lines().collect(Collectors.joining());
-                System.out.println("Тело запроса: " + requestBody);
-                proxyRequest.setEntity(new StringEntity(requestBody, java.nio.charset.StandardCharsets.UTF_8));
-
-                String contentType = req.getHeader("Content-Type");
-                if (contentType != null) {
-                    proxyRequest.setHeader("Content-Type", contentType);
-                    System.out.println("Передаём Content-Type: " + contentType);
-                } else {
-                    proxyRequest.setHeader("Content-Type", "application/json");
-                }
-
-                try (CloseableHttpResponse proxyResponse = httpClient.execute(proxyRequest)) {
-                    int statusCode = proxyResponse.getStatusLine().getStatusCode();
-                    System.out.println("Ответ от целевого сервера: " + statusCode + " - " + proxyResponse.getStatusLine().getReasonPhrase());
-
-                    resp.setStatus(statusCode);
-                    Header contentTypeHeader = proxyResponse.getFirstHeader("Content-Type");
-                    resp.setContentType(contentTypeHeader != null ? contentTypeHeader.getValue() : "application/json");
-
-                    String responseBody = EntityUtils.toString(proxyResponse.getEntity());
-                    System.out.println("Тело ответа от Superset: " + responseBody);
-                    resp.getWriter().write(responseBody);
-                }
-            } catch (Exception e) {
-                System.err.println("Ошибка прокси: " + e.getMessage());
-                e.printStackTrace();
-                resp.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Ошибка прокси: " + e.getMessage());
-            }
-        }
-
-        @Override
-        protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws IOException {
-            addCorsHeaders(resp);
-            String pathInfo = req.getPathInfo() != null ? req.getPathInfo() : "";
-            String targetUrl = "http://localhost:8088/api" + pathInfo;
-            System.out.println("Прокси: Обрабатываем GET запрос к " + targetUrl);
-
-            try (CloseableHttpClient httpClient = HttpClients.createDefault()) {
-                HttpGet proxyRequest = new HttpGet(targetUrl);
-
-                String authHeader = req.getHeader("Authorization");
-                if (authHeader != null) {
-                    proxyRequest.setHeader("Authorization", authHeader);
-                    System.out.println("Передаём заголовок Authorization: " + authHeader);
-                }
-
-                try (CloseableHttpResponse proxyResponse = httpClient.execute(proxyRequest)) {
-                    int statusCode = proxyResponse.getStatusLine().getStatusCode();
-                    System.out.println("Ответ от целевого сервера: " + statusCode + " - " + proxyResponse.getStatusLine().getReasonPhrase());
-
-                    resp.setStatus(statusCode);
-                    Header contentTypeHeader = proxyResponse.getFirstHeader("Content-Type");
-                    resp.setContentType(contentTypeHeader != null ? contentTypeHeader.getValue() : "application/json");
-
-                    String responseBody = EntityUtils.toString(proxyResponse.getEntity());
-                    System.out.println("Тело ответа от Superset: " + responseBody);
-                    resp.getWriter().write(responseBody);
-                }
-            } catch (Exception e) {
-                System.err.println("Ошибка прокси: " + e.getMessage());
-                e.printStackTrace();
-                resp.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Ошибка прокси: " + e.getMessage());
-            }
-        }
-
-        @Override
-        protected void doOptions(HttpServletRequest req, HttpServletResponse resp) throws IOException {
-            addCorsHeaders(resp);
-            resp.setStatus(HttpServletResponse.SC_OK);
-        }
-    }
-
     private void addCorsHeaders(HttpServletResponse resp) {
-        resp.setHeader("Access-Control-Allow-Origin", "http://localhost:8000"); // Разрешаем только 8000
+        resp.setHeader("Access-Control-Allow-Origin", "http://localhost:8000");
         resp.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
         resp.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, Accept, Accept-Language, Content-Language, X-Requested-With");
         resp.setHeader("Access-Control-Allow-Credentials", "true");
-        resp.setHeader("Access-Control-Max-Age", "86400"); // Кэшируем preflight на 24 часа
+        resp.setHeader("Access-Control-Max-Age", "86400");
     }
 
     class Results {
@@ -775,8 +687,8 @@ public class ServerManager {
             if (dbConnection == null || dbConnection.isClosed()) {
                 dbConnection = DriverManager.getConnection(DB_URL, DB_USER, DB_PASSWORD);
             }
-            dbConnection.createStatement().execute("TRUNCATE TABLE project_metrics, stages, risks");
 
+            // Сохраняем метрики
             String metricsSql = "INSERT INTO project_metrics (total_time, total_cost, mitigation_strategy, mitigation_budget) VALUES (?, ?, ?, ?)";
             PreparedStatement metricsStmt = dbConnection.prepareStatement(metricsSql);
             metricsStmt.setDouble(1, totalTime);
@@ -785,6 +697,7 @@ public class ServerManager {
             metricsStmt.setDouble(4, mitigationBudget);
             metricsStmt.executeUpdate();
 
+            // Сохраняем этапы
             String stageSql = "INSERT INTO stages (name, duration, cost) VALUES (?, ?, ?)";
             PreparedStatement stageStmt = dbConnection.prepareStatement(stageSql);
             for (Stage stage : stages) {
@@ -794,6 +707,7 @@ public class ServerManager {
                 stageStmt.executeUpdate();
             }
 
+            // Сохраняем риски
             String riskSql = "INSERT INTO risks (name, probability, impact_time, impact_cost, mitigated, strategy) VALUES (?, ?, ?, ?, ?, ?)";
             PreparedStatement riskStmt = dbConnection.prepareStatement(riskSql);
             for (Risk risk : risks) {
@@ -810,7 +724,6 @@ public class ServerManager {
             e.printStackTrace();
         }
     }
-
     public static void main(String[] args) {
         ServerManager server = new ServerManager();
         server.startServer();

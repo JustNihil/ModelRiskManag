@@ -14,20 +14,23 @@ export function fetchDashboardData() {
     .catch(error => {
         console.error("Ошибка получения данных дашборда:", error);
         alert("Ошибка: " + error.message);
-        throw error; 
+        throw error;
     });
 }
 
-export async function createModel(stages) {
+export async function createModel(stages, risks) {
     if (!stages || stages.length === 0) {
         alert("Добавьте хотя бы один этап перед созданием модели.");
         return false;
     }
     try {
+        const data = { stages, risks };
+        console.log("Формируемые данные для отправки:", data); // Для отладки
+        console.log("JSON для отправки:", JSON.stringify(data)); // Для отладки
         const response = await fetch('http://localhost:8089/create', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(stages)
+            body: JSON.stringify(data)
         });
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status} - ${response.statusText}`);
         const text = await response.text();

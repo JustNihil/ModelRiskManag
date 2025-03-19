@@ -55,6 +55,7 @@ def export_metrics(output_file="metrics.json"):
                 cur.execute("""
                     SELECT total_time, total_cost, mitigation_strategy, mitigation_budget
                     FROM project_metrics
+                    ORDER BY created_at DESC
                     LIMIT 1
                 """)
                 metrics = cur.fetchone() or {
@@ -79,13 +80,24 @@ def export_risks(output_file="risks.json"):
                     FROM risks
                 """)
                 risks = cur.fetchall()
+                # Преобразуем RealDictRow в обычный словарь
+                risks_list = [
+                    {
+                        "name": risk["name"],
+                        "probability": float(risk["probability"]),
+                        "impact_time": float(risk["impact_time"]),
+                        "impact_cost": float(risk["impact_cost"]),
+                        "mitigated": bool(risk["mitigated"]),
+                        "strategy": risk["strategy"]
+                    } for risk in risks
+                ]
                 with open(output_file, "w", encoding="utf-8") as f:
-                    json.dump(risks, f)
-                return risks
+                    json.dump(risks_list, f)
+                return risks_list
     except Exception as e:
         raise Exception(f"Ошибка экспорта рисков: {e}")
 
-def main():
+if __name__ == "__main__":
     import sys
     action = sys.argv[1] if len(sys.argv) > 1 else None
     try:
@@ -100,15 +112,3 @@ def main():
         print(json.dumps(result))
     except Exception as e:
         print(json.dumps({"error": str(e)}))
-
-if __name__ == "__main__":
-    import sys
-    import json
-    action = sys.argv[1] if len(sys.argv) > 1 else None
-    if action == "export_dashboards":
-        result = export_dashboards()
-        print(json.dumps(result))
-    elif action == "export_metrics":
-        print(json.dumps({"total_time": 550.0, "total_cost": 5500.0, "mitigation_strategy": "N/A", "mitigation_budget": 0.0}))
-    elif action == "export_risks":
-        print(json.dumps([]))
