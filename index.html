@@ -4,99 +4,114 @@
     <meta charset="UTF-8">
     <title>Управление рисками IT-проектов</title>
     <link rel="stylesheet" href="styles.css" id="css-link">
-    <script>
-        document.getElementById('css-link').href = 'styles.css?v=' + Date.now();
-    </script>
-    <!-- Подключение Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
     <h1>Управление рисками IT-проектов</h1>
 
-    <!-- Ввод этапов -->
     <div class="section">
         <h2>Этапы проекта</h2>
         <div class="input-row">
             <input type="text" id="stageName" placeholder="Название">
             <input type="number" id="stageDuration" placeholder="Продолжительность (дни)">
-            <input type="number" id="stageCost" placeholder="Стоимость">
+            <input type="number" id="stageCost" placeholder="Стоимость ($)">
             <button onclick="addStage()">Добавить этап</button>
         </div>
-        <button onclick="createModel()">Создать модель</button>
-        <button onclick="saveData()">Сохранить данные</button>
-        <button onclick="loadData()">Загрузить данные</button>
-        <h1></h1>
         <table id="stagesTable">
-            <tr><th>Название</th><th>Продолжительность (дни)</th><th>Стоимость</th></tr>
+            <tr><th>Название</th><th>Продолжительность (дни)</th><th>Стоимость ($)</th><th>Удалить</th></tr>
         </table>
     </div>
 
-    <!-- Ввод рисков -->
     <div class="section">
         <h2>Риски</h2>
         <div class="input-row">
             <input type="text" id="riskName" placeholder="Название">
             <input type="number" id="riskProb" step="0.1" min="0" max="1" placeholder="Вероятность (0-1)">
-            <input type="number" id="riskTime" placeholder="Влияние на время (дни)">
-            <input type="number" id="riskCost" placeholder="Влияние на стоимость">
+            <input type="number" id="riskTime" min="0" placeholder="Влияние на время (дни)">
+            <input type="number" id="riskCost" min="0" placeholder="Влияние на стоимость ($)">
             <select id="riskStrategy">
                 <option value="Ignore">Игнорировать</option>
                 <option value="Mitigate">Снизить</option>
                 <option value="Eliminate">Устранить</option>
             </select>
-            <button onclick="addRisk()">Добавить риск</button>
+            <select id="riskCategory">
+                <option value="Технические">Технические</option>
+                <option value="Организационные">Организационные</option>
+                <option value="Внешние">Внешние</option>
+                <option value="Не указано">Не указано</option>
+            </select>
+            <button onclick="addCustomRisk()">Добавить риск</button>
         </div>
-        <h1></h1>
+        <div class="input-row">
+            <select id="typicalRiskCategory">
+                <option value="">Выберите категорию</option>
+                <option value="Технические">Технические</option>
+                <option value="Организационные">Организационные</option>
+                <option value="Внешние">Внешние</option>
+            </select>
+            <button onclick="addTypicalRisksByCategory(document.getElementById('typicalRiskCategory').value)">Добавить риски категории</button>
+        </div>
         <table id="risksTable">
-            <tr><th>Название</th><th>Вероятность (0-1)</th><th>Влияние на время (дни)</th><th>Влияние на стоимость</th><th>Стратегия</th></tr>
+            <tr><th>Название</th><th>Вероятность</th><th>Время (дни)</th><th>Стоимость ($)</th><th>Стратегия</th><th>Категория</th><th>Удалить</th></tr>
         </table>
     </div>
 
-    <!-- Типичные риски -->
     <div class="section">
-        <h2>Типичные риски</h2>
-        <select id="typicalRisks">
-            <option value="">Выберите риск</option>
-            <option value="Задержка в разработке">Задержка в разработке</option>
-            <option value="Отсутствие сотрудников">Отсутствие сотрудников</option>
-            <option value="Задержка поставки оборудования">Задержка поставки оборудования</option>
-            <option value="Неправильное планирование">Неправильное планирование</option>
-            <option value="Кибератака">Кибератака</option>
-        </select>
-        <button onclick="addTypicalRisk(document.getElementById('typicalRisks').value)">Добавить типичный риск</button>
+        <h2>Настройки модели</h2>
+        <div class="input-row">
+            <div class="input-group">
+                <label>Пороговое время (дни):</label>
+                <input type="number" id="timeThreshold" value="150">
+            </div>
+            <div class="input-group">
+                <label>Пороговая стоимость ($):</label>
+                <input type="number" id="costThreshold" value="75000">
+            </div>
+            <div class="input-group">
+                <label>Целевое время (дни):</label>
+                <input type="number" id="targetTime" value="120">
+            </div>
+            <div class="input-group">
+                <label>Целевая стоимость ($):</label>
+                <input type="number" id="targetCost" value="60000">
+            </div>
+        </div>
+        <div class="action-buttons">
+            <button onclick="createModel()">Создать модель</button>
+            <button onclick="saveData()">Сохранить данные</button>
+            <button onclick="loadData()">Загрузить данные</button>
+        </div>
     </div>
 
-    <!-- Управление рисками -->
     <div class="section">
-        <h2>Общая стратегия управления рисками</h2>
-        <label>Стратегия: </label>
-        <select id="mitigationStrategy">
-            <option value="Ignore">Игнорировать</option>
-            <option value="Mitigate">Снизить</option>
-            <option value="Eliminate">Устранить</option>
-        </select>
-        <label>Бюджет на управление: </label>
-        <input type="number" id="mitigationBudget" value="10000">
-        <button onclick="setMitigation()">Установить стратегию</button>
+        <h2>Стратегия управления рисками</h2>
+        <div class="input-row">
+            <select id="mitigationStrategy">
+                <option value="Ignore">Игнорировать</option>
+                <option value="Mitigate">Снизить</option>
+                <option value="Eliminate">Устранить</option>
+            </select>
+            <input type="number" id="mitigationBudget" value="10000" placeholder="Бюджет ($)">
+            <button onclick="setMitigation()">Установить</button>
+        </div>
     </div>
 
-    <!-- Дашборд результатов -->
     <div class="section dashboard">
         <h2>Результаты и рекомендации</h2>
         <div id="dashboardSummary"></div>
-        <!-- Чарты -->
         <canvas id="metricsChart" width="400" height="200"></canvas>
         <canvas id="risksChart" width="400" height="200"></canvas>
+        <canvas id="timeDistributionChart" width="400" height="200"></canvas>
+        <canvas id="costDistributionChart" width="400" height="200"></canvas>
         <table id="riskResultsTable">
-            <tr><th>Название риска</th><th>Снижен</th><th>Влияние на время</th><th>Влияние на стоимость</th><th>Стратегия</th></tr>
+            <tr><th>Название</th><th>Снижен</th><th>Время (дни)</th><th>Стоимость ($)</th><th>Стратегия</th><th>Категория</th><th>Приоритет</th></tr>
         </table>
         <div id="recommendations"></div>
+        <div id="riskLogs"></div>
     </div>
 
     <button onclick="runSimulation()">Запустить симуляцию</button>
 
-    <!-- Подключение скриптов как модулей -->
-    <script type="module" src="auth.js"></script>
     <script type="module" src="api.js"></script>
     <script type="module" src="dashboard.js"></script>
     <script type="module" src="stages.js"></script>
@@ -104,6 +119,5 @@
     <script type="module" src="simulation.js"></script>
     <script type="module" src="storage.js"></script>
     <script type="module" src="main.js"></script>
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'9226493b78be4c21',t:'MTc0MjMxNzIyNC4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script>
 </body>
 </html>

@@ -1,15 +1,12 @@
 import os
 import subprocess
 import json
-import yaml
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
-# Настройка окружения
-SUPERSET_CONFIG_PATH = "/app/pythonpath_dev/superset_config.py"  # Путь внутри контейнера
+SUPERSET_CONFIG_PATH = "/app/pythonpath_dev/superset_config.py"
 os.environ["SUPERSET_CONFIG_PATH"] = SUPERSET_CONFIG_PATH
 
-# Подключение к базе метаданных
 DB_CONFIG = {
     "dbname": "risk_db",
     "user": "risk_user",
@@ -20,95 +17,88 @@ DB_CONFIG = {
 
 def run_docker_command(container, cmd):
     full_cmd = ['docker', 'exec', container] + cmd
-    print(f"Команда: {full_cmd}")
     result = subprocess.run(full_cmd, capture_output=True, text=True)
     if result.returncode != 0:
-        error_msg = result.stderr or result.stdout
-        raise Exception(f"Ошибка выполнения команды {cmd}: {error_msg}")
+        raise Exception(f"Ошибка команды {cmd}: {result.stderr}")
     return result.stdout
 
 def get_db_connection():
-    """Создаёт подключение к базе данных."""
-    try:
-        return psycopg2.connect(**DB_CONFIG, cursor_factory=RealDictCursor)
-    except Exception as e:
-        raise Exception(f"Ошибка подключения к базе данных: {e}")
+    return psycopg2.connect(**DB_CONFIG, cursor_factory=RealDictCursor)
 
 def export_dashboards(output_file="/app/models/dashboards.yaml"):
     try:
-        # Создаём директорию, если её нет
         os.makedirs(os.path.dirname(output_file), exist_ok=True)
-        run_docker_command("superset_app", ["mkdir", "-p", os.path.dirname(output_file)])
         run_docker_command("superset_app", ["superset", "export-dashboards", "-f", output_file])
-        if os.path.exists(output_file):
-            return {"status": "success", "file": output_file}
-        else:
-            raise Exception(f"Файл {output_file} не создан после экспорта")
+        return {"status": "success", "file": output_file}
     except Exception as e:
         return {"error": f"Ошибка экспорта дашбордов: {str(e)}"}
 
 def export_metrics(output_file="metrics.json"):
-    """Получает метрики из базы данных."""
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute("""
-                    SELECT total_time, total_cost, mitigation_strategy, mitigation_budget
+                    SELECT total_time, total_cost, mitigation_strategy, mitigation_budget,
+                           time_results, cost_results, time_90th_percentile, cost_90th_percentile,
+                           time_threshold, cost_threshold, time_exceed_probability, cost_exceed_probability,
+                           time_std_dev, cost_std_dev, time_confidence_lower, time_confidence_upper,
+                           cost_confidence_lower, cost_confidence_upper, target_time, target_cost,
+                           time_target_probability, cost_target_probability
                     FROM project_metrics
                     ORDER BY created_at DESC
                     LIMIT 1
                 """)
                 metrics = cur.fetchone() or {
-                    "total_time": 0.0,
-                    "total_cost": 0.0,
-                    "mitigation_strategy": "N/A",
-                    "mitigation_budget": 0.0
+                    "total_time": 0.0, "total_cost": 0.0, "mitigation_strategy": "N/A", "mitigation_budget": 0.0,
+                    "time_results": [], "cost_results": [], "time_90th_percentile": 0.0, "cost_90th_percentile": 0.0,
+                    "time_threshold": 150.0, "cost_threshold": 75000.0, "time_exceed_probability": 0.0,
+                    "cost_exceed_probability": 0.0, "time_std_dev": 0.0, "cost_std_dev": 0.0,
+                    "time_confidence_lower": 0.0, "time_confidence_upper": 0.0, "cost_confidence_lower": 0.0,
+                    "cost_confidence_upper": 0.0, "target_time": 120.0, "target_cost": 60000.0,
+                    "time_target_probability": 0.0, "cost_target_probability": 0.0
                 }
                 with open(output_file, "w", encoding="utf-8") as f:
                     json.dump(metrics, f)
                 return metrics
     except Exception as e:
-        raise Exception(f"Ошибка экспорта метрик: {e}")
+        return {"error": f"Ошибка экспорта метрик: {str(e)}"}
 
 def export_risks(output_file="risks.json"):
-    """Получает риски из базы данных."""
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute("""
-                    SELECT name, probability, impact_time, impact_cost, mitigated, strategy
+                    SELECT name, probability, impact_time, impact_cost, mitigated, strategy, category, priority
                     FROM risks
                 """)
                 risks = cur.fetchall()
-                # Преобразуем RealDictRow в обычный словарь
-                risks_list = [
-                    {
-                        "name": risk["name"],
-                        "probability": float(risk["probability"]),
-                        "impact_time": float(risk["impact_time"]),
-                        "impact_cost": float(risk["impact_cost"]),
-                        "mitigated": bool(risk["mitigated"]),
-                        "strategy": risk["strategy"]
-                    } for risk in risks
-                ]
+                risks_list = [{
+                    "name": r["name"],
+                    "probability": float(r["probability"] or 0.0),
+                    "impactTime": float(r["impact_time"] or 0.0),
+                    "impactCost": float(r["impact_cost"] or 0.0),
+                    "mitigated": bool(r["mitigated"]),
+                    "strategy": r["strategy"] or "Ignore",
+                    "category": r["category"] or "Не указано",
+                    "priority": float(r["priority"] or 0.0)
+                } for r in risks]
                 with open(output_file, "w", encoding="utf-8") as f:
                     json.dump(risks_list, f)
                 return risks_list
     except Exception as e:
-        raise Exception(f"Ошибка экспорта рисков: {e}")
+        return {"error": f"Ошибка экспорта рисков: {str(e)}"}
 
 if __name__ == "__main__":
     import sys
-    action = sys.argv[1] if len(sys.argv) > 1 else None
-    try:
-        if action == "export_dashboards":
-            result = export_dashboards()
-        elif action == "export_metrics":
-            result = export_metrics()
-        elif action == "export_risks":
-            result = export_risks()
-        else:
-            result = {"error": "Неизвестная команда"}
-        print(json.dumps(result))
-    except Exception as e:
-        print(json.dumps({"error": str(e)}))
+    if len(sys.argv) < 2:
+        print(json.dumps({"error": "Не указана команда"}))
+        sys.exit(1)
+    command = sys.argv[1]
+    if command == "export_metrics":
+        print(json.dumps(export_metrics()))
+    elif command == "export_risks":
+        print(json.dumps(export_risks()))
+    elif command == "export_dashboards":
+        print(json.dumps(export_dashboards()))
+    else:
+        print(json.dumps({"error": f"Неизвестная команда: {command}"}))

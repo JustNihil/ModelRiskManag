@@ -17,7 +17,6 @@ body {
     margin-bottom: 20px;
 }
 
-/* Общий стиль для панелей ввода и кнопок */
 .panel {
     background-color: #40444B;
     border: 1px solid #202225;
@@ -26,14 +25,10 @@ body {
     margin-bottom: 10px;
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    flex-wrap: wrap;
     gap: 10px;
-    flex: 1; /* Растягивание по ширине */
-    min-width: 0; /* Предотвращает переполнение */
+    flex-wrap: wrap;
 }
 
-/* Стили для полей ввода внутри панелей */
 .panel input,
 .panel select,
 .panel button {
@@ -41,40 +36,32 @@ body {
     border: none;
     color: #DCDDDE;
     font-size: 14px;
-    width: 100%;
-    padding: 0;
+    padding: 5px;
     outline: none;
 }
 
-/* Стили для меток (подписей) */
 .panel label {
     font-size: 12px;
     color: #DCDDDE;
     opacity: 0.8;
-    margin-right: 10px;
     white-space: nowrap;
 }
 
-/* Строка ввода с панелями */
 .input-row {
     display: flex;
-    gap: 15px; /* Промежутки между панелями */
-    margin-bottom: 20px; /* Отступ от таблицы */
-    margin-top: 0; /* Убираем верхний отступ */
-    flex-wrap: wrap; /* Адаптивность */
+    gap: 15px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
 }
 
-/* Контейнер для таблицы с отступами */
 .table-container {
-    margin-top: 20px; /* Отступ сверху от .input-row */
-    margin-bottom: 20px; /* Отступ снизу от .action-buttons */
+    margin: 20px 0;
 }
 
-/* Кнопки действий */
 .action-buttons {
     display: flex;
-    gap: 15px; /* Промежутки между кнопками */
-    margin-top: 20px; /* Отступ сверху от таблицы */
+    gap: 15px;
+    margin-top: 20px;
     flex-wrap: wrap;
 }
 
@@ -86,8 +73,6 @@ body {
     border-radius: 4px;
     cursor: pointer;
     font-weight: 500;
-    flex: 1; /* Растягиваются по ширине */
-    min-width: 0;
     transition: background-color 0.2s, transform 0.1s;
 }
 
@@ -138,25 +123,27 @@ button:active {
 }
 
 table {
+    width: 100%;
+    border-collapse: collapse;
     background-color: #36393F;
     border-radius: 8px;
     overflow: hidden;
-    border-collapse: collapse;
-    width: 100%;
+}
+
+th, td {
+    padding: 12px;
+    text-align: center;
+    border-bottom: 1px solid #2F3136;
 }
 
 th {
     background-color: #7289DA;
     color: #FFFFFF;
-    padding: 12px;
     font-weight: 500;
-    text-align: center; /* Выравнивание заголовков по центру */
 }
 
 td {
-    padding: 12px;
-    border-bottom: 1px solid #2F3136;
-    text-align: center; /* Выравнивание данных по центру */
+    vertical-align: middle;
 }
 
 tr:nth-child(even) {
@@ -167,6 +154,16 @@ tr:hover {
     background-color: #40444B;
 }
 
+.delete-btn {
+    background-color: #FF5555;
+    padding: 5px 10px;
+    cursor: pointer;
+}
+
+.delete-btn:hover {
+    background-color: #FF3333;
+}
+
 .dashboard {
     background-color: #36393F;
     border: 2px solid #7289DA;
@@ -174,15 +171,13 @@ tr:hover {
     padding: 20px;
 }
 
-/* Заголовки */
 h1, h2 {
     color: #FFFFFF;
     font-weight: 700;
     margin-bottom: 15px;
-    margin-top: 0; /* Убираем верхний отступ заголовков */
+    margin-top: 0;
 }
 
-/* Дополнительные элементы дашборда */
 #dashboardSummary, #recommendations {
     background-color: #2F3136;
     padding: 10px;
@@ -190,7 +185,6 @@ h1, h2 {
     margin: 10px 0;
 }
 
-/* Группировка полей ввода с подписями */
 .input-group {
     display: flex;
     flex-direction: column;
@@ -204,13 +198,6 @@ h1, h2 {
     margin-left: 5px;
 }
 
-/* Убираем верхнюю границу для таблиц без заголовков */
-#stagesTable tr:first-child td,
-#risksTable tr:first-child td {
-    border-top: none;
-}
-
-/* Адаптивность */
 @media (max-width: 768px) {
     .input-row, .action-buttons {
         flex-direction: column;
