@@ -513,10 +513,16 @@ public class ServerManager {
                 Gson gson = new Gson();
                 Risk risk = gson.fromJson(json, Risk.class);
                 if (risk != null && risk.name != null && !risk.name.isEmpty()) {
-                    risks.add(risk);
-                    uploadToPostgreSQL();
-                    logRiskAction(risk.name, "Добавлен", "Добавлен риск с приоритетом " + risk.priority);
-                    resp.getWriter().write("Риск добавлен: " + risk.name);
+                    // Проверяем, существует ли риск с таким именем
+                    if (risks.stream().noneMatch(r -> r.name.equals(risk.name))) {
+                        risks.add(risk);
+                        uploadToPostgreSQL();
+                        logRiskAction(risk.name, "Добавлен", "Добавлен риск с приоритетом " + risk.priority);
+                        resp.getWriter().write("Риск добавлен: " + risk.name);
+                    } else {
+                        resp.getWriter().write("Риск с именем " + risk.name + " уже существует.");
+                        System.out.println("Риск с именем " + risk.name + " уже существует, пропускаем добавление.");
+                    }
                 } else {
                     resp.sendError(HttpServletResponse.SC_BAD_REQUEST, "Некорректные данные риска");
                 }
@@ -543,6 +549,7 @@ public class ServerManager {
                 if (mitigation != null && mitigation.strategy != null && !mitigation.strategy.isEmpty()) {
                     mitigationStrategy = mitigation.strategy;
                     mitigationBudget = mitigation.budget;
+                    runPertSimulation(); // Добавляем вызов симуляции
                     uploadToPostgreSQL();
                     resp.getWriter().write("Стратегия установлена: " + mitigationStrategy);
                 } else {
@@ -679,8 +686,30 @@ public class ServerManager {
                     throw new Exception("Ошибка экспорта рисков: " + ((java.util.Map<?, ?>) risksData).get("error"));
                 }
 
-                String dashboardData = String.format("{\"timeResults\": %s, \"costResults\": %s, \"time90thPercentile\": %f, \"cost90thPercentile\": %f, \"timeThreshold\": %f, \"costThreshold\": %f, \"timeExceedProbability\": %f, \"costExceedProbability\": %f, \"timeStdDev\": %f, \"costStdDev\": %f, \"timeConfidenceLower\": %f, \"timeConfidenceUpper\": %f, \"costConfidenceLower\": %f, \"costConfidenceUpper\": %f, \"targetTime\": %f, \"targetCost\": %f, \"timeTargetProbability\": %f, \"costTargetProbability\": %f, \"criticalRisks\": %s, \"criticalStages\": %s}",
-                    gson.toJson(timeResults), gson.toJson(costResults), time90thPercentile, cost90thPercentile, timeThreshold, costThreshold, timeExceedProbability, costExceedProbability, timeStdDev, costStdDev, timeConfidenceLower, timeConfidenceUpper, costConfidenceLower, costConfidenceUpper, targetTime, targetCost, timeTargetProbability, costTargetProbability, gson.toJson(criticalRisks), gson.toJson(criticalStages));
+                // Формируем dashboardData как объект, а затем сериализуем его в JSON
+                Map<String, Object> dashboardDataMap = new HashMap<>();
+                dashboardDataMap.put("timeResults", timeResults);
+                dashboardDataMap.put("costResults", costResults);
+                dashboardDataMap.put("time90thPercentile", time90thPercentile);
+                dashboardDataMap.put("cost90thPercentile", cost90thPercentile);
+                dashboardDataMap.put("timeThreshold", timeThreshold);
+                dashboardDataMap.put("costThreshold", costThreshold);
+                dashboardDataMap.put("timeExceedProbability", timeExceedProbability);
+                dashboardDataMap.put("costExceedProbability", costExceedProbability);
+                dashboardDataMap.put("timeStdDev", timeStdDev);
+                dashboardDataMap.put("costStdDev", costStdDev);
+                dashboardDataMap.put("timeConfidenceLower", timeConfidenceLower);
+                dashboardDataMap.put("timeConfidenceUpper", timeConfidenceUpper);
+                dashboardDataMap.put("costConfidenceLower", costConfidenceLower);
+                dashboardDataMap.put("costConfidenceUpper", costConfidenceUpper);
+                dashboardDataMap.put("targetTime", targetTime);
+                dashboardDataMap.put("targetCost", targetCost);
+                dashboardDataMap.put("timeTargetProbability", timeTargetProbability);
+                dashboardDataMap.put("costTargetProbability", costTargetProbability);
+                dashboardDataMap.put("criticalRisks", criticalRisks);
+                dashboardDataMap.put("criticalStages", criticalStages);
+
+                String dashboardData = gson.toJson(dashboardDataMap); // Сериализуем в корректный JSON
 
                 resp.setContentType("application/json");
                 resp.getWriter().write(gson.toJson(new DashboardData(metrics, risksData, dashboardData)));
@@ -702,9 +731,10 @@ public class ServerManager {
         @Override
         protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws IOException {
             addCorsHeaders(resp);
+            Connection localConnection = null;
             try {
-                // Используем java.sql.Statement
-                java.sql.Statement stmt = dbConnection.createStatement();
+                localConnection = DriverManager.getConnection(DB_URL, DB_USER, DB_PASSWORD);
+                java.sql.Statement stmt = localConnection.createStatement();
                 java.sql.ResultSet rs = stmt.executeQuery("SELECT risk_name, action, timestamp, details FROM risk_logs ORDER BY timestamp DESC");
 
                 List<Map<String, Object>> logs = new ArrayList<>();
@@ -717,12 +747,25 @@ public class ServerManager {
                     logs.add(log);
                 }
 
+                rs.close();
+                stmt.close();
+
                 Gson gson = new Gson();
                 String response = gson.toJson(logs);
                 resp.setContentType("application/json");
                 resp.getWriter().write(response);
             } catch (SQLException e) {
+                System.err.println("Ошибка в RiskLogsServlet: " + e.getMessage());
+                e.printStackTrace();
                 resp.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Ошибка получения логов: " + e.getMessage());
+            } finally {
+                if (localConnection != null) {
+                    try {
+                        localConnection.close();
+                    } catch (SQLException e) {
+                        System.err.println("Ошибка при закрытии соединения в RiskLogsServlet: " + e.getMessage());
+                    }
+                }
             }
         }
 
@@ -785,7 +828,9 @@ public class ServerManager {
             }
         }
 
+        // Пересчитываем приоритеты рисков
         for (Risk risk : risks) {
+            risk.priority = risk.probability * (risk.impactTime + risk.impactCost / 1000); // Обновляем приоритет
             if (!risk.mitigated) {
                 double expectedImpactTime = risk.probability * (risk.impactTimeOptimistic + 4 * risk.impactTime + risk.impactTimePessimistic) / 6;
                 double expectedImpactCost = risk.probability * (risk.impactCostOptimistic + 4 * risk.impactCost + risk.impactCostPessimistic) / 6;
@@ -864,48 +909,76 @@ public class ServerManager {
         return mean + stdDev * random.nextGaussian();
     }
 
+    // Перегруженный метод logRiskAction без Connection
     private void logRiskAction(String riskName, String action, String details) {
+        Connection localConnection = null;
         try {
-            // Используем java.sql.PreparedStatement
-            java.sql.PreparedStatement logStmt = dbConnection.prepareStatement(
+            localConnection = DriverManager.getConnection(DB_URL, DB_USER, DB_PASSWORD);
+            logRiskAction(riskName, action, details, localConnection);
+        } catch (SQLException e) {
+            System.err.println("Ошибка при создании соединения в logRiskAction: " + e.getMessage());
+            e.printStackTrace();
+        } finally {
+            if (localConnection != null) {
+                try {
+                    localConnection.close();
+                } catch (SQLException e) {
+                    System.err.println("Ошибка при закрытии соединения в logRiskAction: " + e.getMessage());
+                }
+            }
+        }
+    }
+
+    // Оригинальный метод logRiskAction с Connection
+    private void logRiskAction(String riskName, String action, String details, Connection connection) {
+        try {
+            java.sql.PreparedStatement logStmt = connection.prepareStatement(
                 "INSERT INTO risk_logs (risk_name, action, details) VALUES (?, ?, ?)"
             );
             logStmt.setString(1, riskName);
             logStmt.setString(2, action);
             logStmt.setString(3, details);
             logStmt.executeUpdate();
+            System.out.println("Действие с риском записано в лог: " + riskName + " - " + action);
         } catch (SQLException e) {
             System.err.println("Error logging risk action: " + e.getMessage());
+            e.printStackTrace();
         }
     }
 
     private void uploadToPostgreSQL() {
+        Connection localConnection = null;
+        boolean autoCommitWasEnabled = true;
         try {
-            if (dbConnection == null || dbConnection.isClosed()) {
-                dbConnection = DriverManager.getConnection(DB_URL, DB_USER, DB_PASSWORD);
-                System.out.println("Подключение к PostgreSQL восстановлено.");
-            }
+            // Создаём новое соединение для этого вызова
+            localConnection = DriverManager.getConnection(DB_URL, DB_USER, DB_PASSWORD);
+            System.out.println("Новое подключение к PostgreSQL создано для uploadToPostgreSQL.");
 
-            // Начинаем транзакцию
-            dbConnection.setAutoCommit(false);
+            // Логируем начальное состояние autoCommit
+            autoCommitWasEnabled = localConnection.getAutoCommit();
+            System.out.println("Начальное состояние autoCommit: " + autoCommitWasEnabled);
+
+            // Отключаем autoCommit
+            localConnection.setAutoCommit(false);
+            System.out.println("autoCommit отключён: " + localConnection.getAutoCommit());
 
             // Удаляем старые данные из project_metrics
-            java.sql.PreparedStatement deleteMetricsStmt = dbConnection.prepareStatement(
+            java.sql.PreparedStatement deleteMetricsStmt = localConnection.prepareStatement(
                 "DELETE FROM project_metrics"
             );
             deleteMetricsStmt.executeUpdate();
             System.out.println("Старые данные из project_metrics удалены.");
 
             // Сохраняем новые метрики
-            java.sql.PreparedStatement metricsStmt = dbConnection.prepareStatement(
+            java.sql.PreparedStatement metricsStmt = localConnection.prepareStatement(
                 "INSERT INTO project_metrics (total_time, total_cost, mitigation_strategy, mitigation_budget, time_results, cost_results, time_90th_percentile, cost_90th_percentile, time_threshold, cost_threshold, time_exceed_probability, cost_exceed_probability, time_std_dev, cost_std_dev, time_confidence_lower, time_confidence_upper, cost_confidence_lower, cost_confidence_upper, target_time, target_cost, time_target_probability, cost_target_probability) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             );
             metricsStmt.setDouble(1, totalTime);
             metricsStmt.setDouble(2, totalCost);
             metricsStmt.setString(3, mitigationStrategy != null ? mitigationStrategy : "N/A");
             metricsStmt.setDouble(4, mitigationBudget);
-            metricsStmt.setArray(5, dbConnection.createArrayOf("float8", timeResults.toArray()));
-            metricsStmt.setArray(6, dbConnection.createArrayOf("float8", costResults.toArray()));
+            metricsStmt.setArray(5, localConnection.createArrayOf("float8", timeResults.toArray()));
+            metricsStmt.setArray(6, localConnection.createArrayOf("float8", costResults.toArray()));
             metricsStmt.setDouble(7, time90thPercentile);
             metricsStmt.setDouble(8, cost90thPercentile);
             metricsStmt.setDouble(9, timeThreshold);
@@ -926,14 +999,14 @@ public class ServerManager {
             System.out.println("Новые метрики сохранены, строк затронуто: " + rowsAffected);
 
             // Удаляем старые данные из stages
-            java.sql.PreparedStatement deleteStagesStmt = dbConnection.prepareStatement(
+            java.sql.PreparedStatement deleteStagesStmt = localConnection.prepareStatement(
                 "DELETE FROM stages"
             );
             deleteStagesStmt.executeUpdate();
             System.out.println("Старые данные из stages удалены.");
 
             // Сохраняем новые этапы
-            java.sql.PreparedStatement stageStmt = dbConnection.prepareStatement(
+            java.sql.PreparedStatement stageStmt = localConnection.prepareStatement(
                 "INSERT INTO stages (name, duration, cost) VALUES (?, ?, ?)"
             );
             for (Stage stage : stages) {
@@ -945,14 +1018,14 @@ public class ServerManager {
             System.out.println("Новые этапы сохранены.");
 
             // Удаляем старые данные из risks
-            java.sql.PreparedStatement deleteRisksStmt = dbConnection.prepareStatement(
+            java.sql.PreparedStatement deleteRisksStmt = localConnection.prepareStatement(
                 "DELETE FROM risks"
             );
             deleteRisksStmt.executeUpdate();
             System.out.println("Старые данные из risks удалены.");
 
             // Сохраняем новые риски
-            java.sql.PreparedStatement riskStmt = dbConnection.prepareStatement(
+            java.sql.PreparedStatement riskStmt = localConnection.prepareStatement(
                 "INSERT INTO risks (name, probability, impact_time, impact_cost, mitigated, strategy, category, priority) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
             );
             for (Risk risk : risks) {
@@ -968,33 +1041,46 @@ public class ServerManager {
             }
             System.out.println("Новые риски сохранены.");
 
+            // Логируем действие с риском
+            if (!risks.isEmpty()) {
+                logRiskAction(risks.get(risks.size() - 1).name, "Added", "Risk added via AddRiskServlet", localConnection);
+            }
+
+            // Проверяем состояние autoCommit перед коммитом
+            System.out.println("Состояние autoCommit перед коммитом: " + localConnection.getAutoCommit());
+
             // Подтверждаем транзакцию
-            dbConnection.commit();
+            localConnection.commit();
             System.out.println("Транзакция успешно завершена.");
         } catch (SQLException e) {
             System.err.println("Error uploading to PostgreSQL: " + e.getMessage());
             e.printStackTrace();
             try {
-                if (dbConnection != null) {
-                    dbConnection.rollback();
+                if (localConnection != null && !localConnection.getAutoCommit()) {
+                    localConnection.rollback();
                     System.out.println("Транзакция откатана из-за ошибки.");
                 }
             } catch (SQLException rollbackEx) {
-                System.err.println("Ошибка при откате транзакции: " +  rollbackEx.getMessage());
+                System.err.println("Ошибка при откате транзакции: " + rollbackEx.getMessage());
                 rollbackEx.printStackTrace();
             }
         } finally {
             try {
-                if (dbConnection != null) {
-                    dbConnection.setAutoCommit(true);
+                if (localConnection != null) {
+                    // Восстанавливаем исходное состояние autoCommit
+                    localConnection.setAutoCommit(autoCommitWasEnabled);
+                    System.out.println("Состояние autoCommit восстановлено: " + autoCommitWasEnabled);
+                    // Закрываем соединение
+                    localConnection.close();
+                    System.out.println("Соединение с PostgreSQL закрыто.");
                 }
             } catch (SQLException e) {
-                System.err.println("Ошибка при восстановлении auto-commit: " + e.getMessage());
+                System.err.println("Ошибка при восстановлении autoCommit или закрытии соединения: " + e.getMessage());
                 e.printStackTrace();
             }
         }
     }
-    
+
     public static void main(String[] args) {
         ServerManager server = new ServerManager();
         server.startServer();

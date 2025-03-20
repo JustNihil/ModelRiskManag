@@ -1,3 +1,5 @@
+import { fetchRiskLogs } from './api.js';
+
 export function createHistogramLabels(data, bins) {
     if (!data || data.length === 0) return [];
     const min = Math.min(...data);

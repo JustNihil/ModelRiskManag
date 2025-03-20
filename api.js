@@ -84,7 +84,9 @@ export async function fetchRiskLogs() {
             method: 'GET',
             headers: { 'Content-Type': 'application/json' }
         });
-        if (!response.ok) throw new Error(`Ошибка: ${response.status}`);
+        if (!response.ok) {
+            throw new Error(`Ошибка: ${response.status}`);
+        }
         return await response.json();
     } catch (error) {
         console.error('Ошибка получения логов:', error);

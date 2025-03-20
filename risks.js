@@ -1,3 +1,4 @@
+// risks.js
 import { addRisk } from './api.js';
 
 export const risks = [];
@@ -19,7 +20,7 @@ export const typicalRisks = {
     ]
 };
 
-export function addCustomRisk() {
+export async function addCustomRisk() {
     const risk = {
         name: document.getElementById('riskName').value,
         probability: parseFloat(document.getElementById('riskProb').value),
@@ -29,23 +30,51 @@ export function addCustomRisk() {
         category: document.getElementById('riskCategory').value || "Не указано"
     };
     if (risk.name && risk.probability >= 0 && risk.probability <= 1 && risk.impactTime >= 0 && risk.impactCost >= 0) {
-        risks.push(risk);
-        addRisk(risk).then(success => {
-            if (success) updateRisksTable();
-        });
+        // Проверяем, существует ли риск с таким именем
+        if (risks.some(r => r.name === risk.name)) {
+            alert(`Риск с именем "${risk.name}" уже существует.`);
+            return;
+        }
+        const success = await addRisk(risk);
+        if (success) {
+            risks.push(risk);
+            updateRisksTable();
+            // Очищаем поля ввода после успешного добавления
+            document.getElementById('riskName').value = '';
+            document.getElementById('riskProb').value = '';
+            document.getElementById('riskTime').value = '';
+            document.getElementById('riskCost').value = '';
+            document.getElementById('riskStrategy').value = 'Ignore';
+            document.getElementById('riskCategory').value = 'Не указано';
+        } else {
+            alert("Не удалось добавить риск. Возможно, он уже существует на сервере.");
+        }
     } else {
         alert("Заполните все поля корректно.");
     }
 }
 
-export function addTypicalRisksByCategory(category) {
+export async function addTypicalRisksByCategory(category) {
     const categoryRisks = typicalRisks[category] || [];
-    categoryRisks.forEach(risk => {
+    let added = false;
+    for (const risk of categoryRisks) {
+        // Проверяем, существует ли риск с таким именем
+        if (risks.some(r => r.name === risk.name)) {
+            console.log(`Риск "${risk.name}" уже существует, пропускаем.`);
+            continue;
+        }
         const newRisk = { ...risk, category };
-        risks.push(newRisk);
-        addRisk(newRisk);
-    });
-    updateRisksTable();
+        const success = await addRisk(newRisk);
+        if (success) {
+            risks.push(newRisk);
+            added = true;
+        }
+    }
+    if (added) {
+        updateRisksTable();
+    } else {
+        alert("Все риски этой категории уже добавлены.");
+    }
 }
 
 export function removeRisk(index) {

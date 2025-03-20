@@ -1,5 +1,6 @@
 import { fetchDashboardData } from './api.js';
 import { updateDashboard } from './dashboard.js';
+import { setMitigation as setMitigationApi } from './api.js'; // Переименуем для ясности
 
 export async function runSimulation() {
     try {
@@ -18,7 +19,7 @@ export async function runSimulation() {
 export async function setMitigation() {
     const strategy = document.getElementById('mitigationStrategy').value;
     const budget = parseFloat(document.getElementById('mitigationBudget').value);
-    const success = await setMitigation(strategy, budget);
+    const success = await setMitigationApi(strategy, budget); // Вызываем функцию из api.js
     if (success) {
         const data = await fetchDashboardData();
         if (data) updateDashboard(data.metrics, data.risks, data.dashboardData);
