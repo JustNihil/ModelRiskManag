@@ -1,6 +1,5 @@
-import { fetchDashboardData } from './api.js';
-import { updateDashboard } from './dashboard.js';
-import { setMitigation as setMitigationApi } from './api.js'; // Переименуем для ясности
+// simulation.js
+import { setMitigation as setMitigationApi } from './api.js';
 
 export async function runSimulation() {
     try {
@@ -8,20 +7,21 @@ export async function runSimulation() {
             method: 'GET',
             headers: { 'Content-Type': 'application/json' }
         });
-        if (!response.ok) throw new Error(`Ошибка: ${response.status}`);
-        const data = await fetchDashboardData();
-        if (data) updateDashboard(data.metrics, data.risks, data.dashboardData);
+        if (!response.ok) throw new Error(`Ошибка: ${response.status} - ${response.statusText}`);
+        console.log("Симуляция запущена успешно");
     } catch (error) {
         console.error("Ошибка симуляции:", error);
+        alert("Ошибка симуляции: " + error.message);
     }
 }
 
 export async function setMitigation() {
     const strategy = document.getElementById('mitigationStrategy').value;
     const budget = parseFloat(document.getElementById('mitigationBudget').value);
-    const success = await setMitigationApi(strategy, budget); // Вызываем функцию из api.js
+    const success = await setMitigationApi(strategy, budget);
     if (success) {
-        const data = await fetchDashboardData();
-        if (data) updateDashboard(data.metrics, data.risks, data.dashboardData);
+        console.log("Стратегия управления рисками установлена");
+    } else {
+        alert("Ошибка установки стратегии");
     }
 }

@@ -30,7 +30,6 @@ export async function addCustomRisk() {
         category: document.getElementById('riskCategory').value || "Не указано"
     };
     if (risk.name && risk.probability >= 0 && risk.probability <= 1 && risk.impactTime >= 0 && risk.impactCost >= 0) {
-        // Проверяем, существует ли риск с таким именем
         if (risks.some(r => r.name === risk.name)) {
             alert(`Риск с именем "${risk.name}" уже существует.`);
             return;
@@ -39,7 +38,6 @@ export async function addCustomRisk() {
         if (success) {
             risks.push(risk);
             updateRisksTable();
-            // Очищаем поля ввода после успешного добавления
             document.getElementById('riskName').value = '';
             document.getElementById('riskProb').value = '';
             document.getElementById('riskTime').value = '';
@@ -58,7 +56,6 @@ export async function addTypicalRisksByCategory(category) {
     const categoryRisks = typicalRisks[category] || [];
     let added = false;
     for (const risk of categoryRisks) {
-        // Проверяем, существует ли риск с таким именем
         if (risks.some(r => r.name === risk.name)) {
             console.log(`Риск "${risk.name}" уже существует, пропускаем.`);
             continue;
@@ -80,6 +77,8 @@ export async function addTypicalRisksByCategory(category) {
 export function removeRisk(index) {
     risks.splice(index, 1);
     updateRisksTable();
+    // Примечание: серверная часть не поддерживает удаление риска.
+    // Для полной синхронизации нужно добавить endpoint на сервере.
 }
 
 export function updateRisksTable() {

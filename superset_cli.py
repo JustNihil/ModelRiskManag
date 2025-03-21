@@ -43,7 +43,8 @@ def export_metrics(output_file="metrics.json"):
                            time_threshold, cost_threshold, time_exceed_probability, cost_exceed_probability,
                            time_std_dev, cost_std_dev, time_confidence_lower, time_confidence_upper,
                            cost_confidence_lower, cost_confidence_upper, target_time, target_cost,
-                           time_target_probability, cost_target_probability
+                           time_target_probability, cost_target_probability, base_cost, contingency_reserve,
+                           contingency_reserve_used, schedule_variance, cost_variance
                     FROM project_metrics
                     ORDER BY created_at DESC
                     LIMIT 1
@@ -55,7 +56,9 @@ def export_metrics(output_file="metrics.json"):
                     "cost_exceed_probability": 0.0, "time_std_dev": 0.0, "cost_std_dev": 0.0,
                     "time_confidence_lower": 0.0, "time_confidence_upper": 0.0, "cost_confidence_lower": 0.0,
                     "cost_confidence_upper": 0.0, "target_time": 120.0, "target_cost": 60000.0,
-                    "time_target_probability": 0.0, "cost_target_probability": 0.0
+                    "time_target_probability": 0.0, "cost_target_probability": 0.0,
+                    "base_cost": 0.0, "contingency_reserve": 5000.0, "contingency_reserve_used": 0.0,
+                    "schedule_variance": 0.0, "cost_variance": 0.0
                 }
                 with open(output_file, "w", encoding="utf-8") as f:
                     json.dump(metrics, f)

@@ -1,3 +1,4 @@
+// dashboard.js
 import { fetchRiskLogs } from './api.js';
 
 export function createHistogramLabels(data, bins) {
@@ -40,6 +41,9 @@ export function generateRecommendations(metrics, risks, dashboardData) {
         const criticalStageNames = dashboardData.criticalStages.map(stage => stage.name).join(', ');
         recs.push(`Критические этапы, вносящие наибольшую неопределённость: ${criticalStageNames}. Проверьте возможность оптимизации этих этапов.`);
     }
+    if (dashboardData?.scheduleVariance && dashboardData.scheduleVariance > 0) {
+        recs.push(`Проект отстает от графика на ${dashboardData.scheduleVariance.toFixed(1)} дней. Ускорьте выполнение этапов.`);
+    }
 
     if (metrics.total_cost > 50000) {
         recs.push("Ожидаемая стоимость проекта превышает 50,000$. Рассмотрите оптимизацию бюджета.");
@@ -52,6 +56,9 @@ export function generateRecommendations(metrics, risks, dashboardData) {
     }
     if (dashboardData?.costExceedProbability > 0.2) {
         recs.push(`Высокий риск превышения бюджета: вероятность превышения $${dashboardData.costThreshold.toFixed(0)} составляет ${(dashboardData.costExceedProbability * 100).toFixed(1)}%. Рассмотрите меры по снижению затрат.`);
+    }
+    if (dashboardData?.costVariance && dashboardData.costVariance > 0) {
+        recs.push(`Проект превышает бюджет на $${dashboardData.costVariance.toFixed(0)}. Оптимизируйте затраты.`);
     }
 
     if (risks.some(r => r.priority > 10)) {
@@ -70,8 +77,8 @@ export function generateRecommendations(metrics, risks, dashboardData) {
         recs.push(`Верхняя граница доверительного интервала стоимости ($${dashboardData.costConfidenceUpper.toFixed(0)}) превышает пороговое значение ($${dashboardData.costThreshold.toFixed(0)}). Увеличьте бюджетный резерв или пересмотрите затраты.`);
     }
 
-    if (metrics.mitigation_budget < 5000 && (dashboardData?.costExceedProbability > 0.2 || dashboardData?.timeExceedProbability > 0.2)) {
-        recs.push(`Бюджет на управление рисками ($${metrics.mitigation_budget.toFixed(0)}) может быть недостаточным. Рассмотрите его увеличение для снижения рисков.`);
+    if (dashboardData?.contingencyReserveUsed > dashboardData?.contingencyReserve * 0.8) {
+        recs.push(`Использовано более 80% резерва на риски ($${dashboardData.contingencyReserveUsed.toFixed(0)} из $${dashboardData.contingencyReserve.toFixed(0)}). Рассмотрите увеличение резерва.`);
     }
     if (risks.some(r => r.strategy === "Ignore" && r.priority > 5)) {
         const ignoredRisks = risks.filter(r => r.strategy === "Ignore" && r.priority > 5).map(r => r.name).join(', ');
@@ -79,6 +86,24 @@ export function generateRecommendations(metrics, risks, dashboardData) {
     }
 
     return recs.length ? recs : ["Нет критических рекомендаций на данный момент."];
+}
+
+export function updateRiskLogsTable(logs) {
+    const table = document.getElementById('riskLogsTable');
+    while (table.rows.length > 1) table.deleteRow(1);
+    if (logs && Array.isArray(logs) && logs.length > 0) {
+        logs.forEach(log => {
+            const row = table.insertRow();
+            row.insertCell().textContent = log.riskName || 'N/A';
+            row.insertCell().textContent = log.action || 'N/A';
+            row.insertCell().textContent = log.details || 'N/A';
+        });
+    } else {
+        const row = table.insertRow();
+        const cell = row.insertCell();
+        cell.colSpan = 3;
+        cell.textContent = "Логи отсутствуют";
+    }
 }
 
 export function updateDashboard(metrics, risks, dashboardData) {
@@ -104,6 +129,11 @@ export function updateDashboard(metrics, risks, dashboardData) {
         <p>Вероятность уложиться в ${dashboardData?.targetTime ? dashboardData.targetTime.toFixed(1) : 'N/A'} дней: ${(dashboardData?.timeTargetProbability * 100).toFixed(1)}%</p>
         <p>Вероятность превышения ${dashboardData?.timeThreshold ? dashboardData.timeThreshold.toFixed(1) : 'N/A'} дней: ${(dashboardData?.timeExceedProbability * 100).toFixed(1)}%</p>
         <p>Ожидаемая стоимость проекта: $${metrics.total_cost ? metrics.total_cost.toFixed(0) : 'N/A'}</p>
+        <p>Базовая стоимость (без учета рисков): $${metrics.base_cost ? metrics.base_cost.toFixed(0) : 'N/A'}</p>
+        <p>Резерв на риски: $${metrics.contingency_reserve ? metrics.contingency_reserve.toFixed(0) : 'N/A'}</p>
+        <p>Использовано резерва: $${metrics.contingency_reserve_used ? metrics.contingency_reserve_used.toFixed(0) : 'N/A'}</p>
+        <p>Отклонение по времени: ${dashboardData?.scheduleVariance ? dashboardData.scheduleVariance.toFixed(1) : 'N/A'} дней</p>
+        <p>Отклонение по стоимости: $${dashboardData?.costVariance ? dashboardData.costVariance.toFixed(0) : 'N/A'}</p>
         <p>Стандартное отклонение стоимости: $${dashboardData?.costStdDev ? dashboardData.costStdDev.toFixed(0) : 'N/A'}</p>
         <p>95% доверительный интервал стоимости: от $${dashboardData?.costConfidenceLower ? dashboardData.costConfidenceLower.toFixed(0) : 'N/A'} до $${dashboardData?.costConfidenceUpper ? dashboardData.costConfidenceUpper.toFixed(0) : 'N/A'}</p>
         <p>Вероятность уложиться в $${dashboardData?.targetCost ? dashboardData.targetCost.toFixed(0) : 'N/A'}: ${(dashboardData?.costTargetProbability * 100).toFixed(1)}%</p>
@@ -124,15 +154,17 @@ export function updateDashboard(metrics, risks, dashboardData) {
     new Chart(metricsCtx, {
         type: 'bar',
         data: {
-            labels: ['Время (дни)', 'Стоимость', 'Бюджет на управление'],
+            labels: ['Время (дни)', 'Стоимость', 'Базовая стоимость', 'Резерв на риски', 'Использовано резерва'],
             datasets: [{
                 label: 'Метрики проекта',
                 data: [
                     metrics.total_time || 0,
                     metrics.total_cost || 0,
-                    metrics.mitigation_budget || 0
+                    metrics.base_cost || 0,
+                    metrics.contingency_reserve || 0,
+                    metrics.contingency_reserve_used || 0
                 ],
-                backgroundColor: ['#36A2EB', '#FF6384', '#FFCE56']
+                backgroundColor: ['#36A2EB', '#FF6384', '#FFCE56', '#4BC0C0', '#9966FF']
             }]
         },
         options: { scales: { y: { beginAtZero: true } } }
@@ -251,35 +283,4 @@ export function updateDashboard(metrics, risks, dashboardData) {
         <h3>Рекомендации и прогнозы</h3>
         ${recommendations.map(rec => `<p>${rec}</p>`).join('')}
     `;
-
-    fetchRiskLogs().then(logs => {
-        const logsDiv = document.getElementById('riskLogs');
-        if (logs && logs.length > 0) {
-            logsDiv.innerHTML = `
-                <h3>Логи изменений рисков</h3>
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Риск</th>
-                            <th>Действие</th>
-                            <th>Время</th>
-                            <th>Детали</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${logs.map(log => `
-                            <tr>
-                                <td>${log.risk_name}</td>
-                                <td>${log.action}</td>
-                                <td>${log.timestamp}</td>
-                                <td>${log.details}</td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
-            `;
-        } else {
-            logsDiv.innerHTML = "<p>Логи отсутствуют.</p>";
-        }
-    });
 }
