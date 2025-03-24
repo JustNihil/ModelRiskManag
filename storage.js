@@ -1,24 +1,42 @@
 import { stages, updateStagesTable } from './stages.js';
 import { risks, updateRisksTable } from './risks.js';
 
-export function saveData() {
-    const data = { stages, risks };
-    localStorage.setItem('itRiskData', JSON.stringify(data));
-    alert("Данные сохранены.");
-}
+export async function loadData() {
+    try {
+        const response = await fetch('http://localhost:8089/loadLatestData', {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        
+        if (!response.ok) {
+            throw new Error(`Ошибка: ${response.status} - ${response.statusText}`);
+        }
 
-export function loadData() {
-    const savedData = localStorage.getItem('itRiskData');
-    if (savedData) {
-        const data = JSON.parse(savedData);
+        const data = await response.json();
+        
+        if (data.error) {
+            throw new Error(data.error);
+        }
+
+        // Очищаем текущие данные
         stages.length = 0;
         risks.length = 0;
-        stages.push(...data.stages);
-        risks.push(...data.risks);
+
+        // Загружаем новые данные
+        if (data.stages && Array.isArray(data.stages)) {
+            stages.push(...data.stages);
+        }
+        if (data.risks && Array.isArray(data.risks)) {
+            risks.push(...data.risks);
+        }
+
+        // Обновляем таблицы
         updateStagesTable();
         updateRisksTable();
-        alert("Данные загружены.");
-    } else {
-        alert("Нет сохраненных данных.");
+        
+        alert("Последние данные успешно загружены из базы данных.");
+    } catch (error) {
+        console.error('Ошибка загрузки данных:', error);
+        alert("Ошибка загрузки данных: " + error.message);
     }
 }

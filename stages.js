@@ -2,19 +2,22 @@
 export const stages = [];
 
 export function addStage() {
-    const name = document.getElementById('stageName').value;
+    let name = document.getElementById('stageName').value;
     const duration = parseFloat(document.getElementById('stageDuration').value);
     const cost = parseFloat(document.getElementById('stageCost').value);
     const dependencies = document.getElementById('stageDependencies').value.split(',').map(dep => dep.trim()).filter(dep => dep);
+
+    const safeName = name.replace(/[^a-zA-Z0-9-_]/g, '_');
+
     if (name && !isNaN(duration) && !isNaN(cost) && duration >= 0 && cost >= 0) {
         const invalidDeps = dependencies.filter(dep => !stages.some(stage => stage.name === dep));
         if (invalidDeps.length > 0) {
             alert(`Следующие зависимости не найдены среди этапов: ${invalidDeps.join(', ')}`);
             return;
         }
-        stages.push({ name, duration, cost, dependencies, actualDuration: 0, actualCost: 0 });
+        stages.push({ name, safeName, duration, cost, dependencies, actualDuration: 0, actualCost: 0 });
         console.log(`Этап "${name}" добавлен`);
-        updateStagesTable();
+        window.updateStagesTable(); // Изменяем на window.updateStagesTable
         document.getElementById('stageName').value = '';
         document.getElementById('stageDuration').value = '';
         document.getElementById('stageCost').value = '';
@@ -33,7 +36,7 @@ export function removeStage(index) {
     }
     stages.splice(index, 1);
     console.log(`Этап "${stageName}" удален`);
-    updateStagesTable();
+    window.updateStagesTable(); // Изменяем на window.updateStagesTable
 }
 
 export function updateStagesTable() {

@@ -145,7 +145,7 @@
         </div>
         <div class="action-buttons">
             <button onclick="window.createModel()">Создать модель</button>
-            <button onclick="window.saveData()">Сохранить данные</button>
+            <!--<button onclick="window.saveData()">Сохранить данные</button>-->
             <button onclick="window.loadData()">Загрузить данные</button>
         </div>
     </div>
@@ -167,6 +167,8 @@
                 <input type="number" id="mitigationBudget" value="10000" placeholder="Бюджет">
             </div>
             <button onclick="window.setMitigation()">Установить</button>
+            <button onclick="window.runSimulation()">Пересчитать симуляцию</button>
+
         </div>
     </div>
 
@@ -174,10 +176,34 @@
     <div class="section dashboard">
         <h2>Результаты и рекомендации</h2>
         <div id="dashboardSummary"></div>
-        <canvas id="metricsChart" width="400" height="200"></canvas>
-        <canvas id="risksChart" width="400" height="200"></canvas>
-        <canvas id="timeDistributionChart" width="400" height="200"></canvas>
-        <canvas id="costDistributionChart" width="400" height="200"></canvas>
+        
+        <div class="chart-container chart-centered">
+            <h4>Стоимость проекта</h4>
+            <canvas id="metricsChart" width="600" height="200"></canvas>
+        </div>
+
+        <div class="chart-row">
+            <div class="chart-container">
+                <h4>Влияние рисков на стоимость</h4>
+                <canvas id="costImpactChart" width="500" height="300"></canvas>
+            </div>
+            <div class="chart-container">
+                <h4>Влияние рисков на время</h4>
+                <canvas id="timeImpactChart" width="500" height="300"></canvas>
+            </div>
+        </div>
+        
+        <div class="chart-row">
+            <div class="chart-container">
+                <h4>Распределение стоимости</h4>
+                <canvas id="costDistributionChart" width="500" height="300"></canvas>
+            </div>
+            <div class="chart-container">
+                <h4>Распределение времени</h4>
+                <canvas id="timeDistributionChart" width="500" height="300"></canvas>
+            </div>
+        </div>
+        
         <table id="riskResultsTable">
             <thead>
                 <tr>
@@ -208,8 +234,6 @@
         </div>
     </div>
 
-    <button onclick="window.runSimulation()">Запустить симуляцию</button>
-
     <script type="module">
         import { stages, addStage, removeStage, updateStagesTable } from './stages.js';
         import { updateProgress, fetchRiskLogs } from './api.js';
@@ -217,9 +241,19 @@
 
         // Динамическое создание формы для обновления прогресса
         function updateProgressForm() {
+            console.log("Вызов updateProgressForm, stages:", stages);
             const formDiv = document.getElementById('progressUpdateForm');
+            if (!formDiv) {
+                console.error("Элемент с ID 'progressUpdateForm' не найден");
+                return;
+            }
             formDiv.innerHTML = '';
             stages.forEach(stage => {
+                if (!stage.safeName) {
+                    console.error(`safeName не определён для этапа ${stage.name}, создаём его`);
+                    stage.safeName = stage.name.replace(/[^a-zA-Z0-9-_]/g, '_');
+                }
+                console.log(`Создание полей для этапа ${stage.name}, safeName: ${stage.safeName}`);
                 const stageDiv = document.createElement('div');
                 stageDiv.className = 'input-row';
                 stageDiv.innerHTML = `
@@ -227,12 +261,12 @@
                         <label>Этап: ${stage.name}</label>
                     </div>
                     <div class="input-group">
-                        <label for="actualDuration_${stage.name}">Фактическая длительность (дни):</label>
-                        <input type="number" id="actualDuration_${stage.name}" value="${stage.actualDuration || 0}" min="0">
+                        <label for="actualDuration_${stage.safeName}">Фактическая длительность (дни):</label>
+                        <input type="number" id="actualDuration_${stage.safeName}" value="${stage.actualDuration || 0}" min="0">
                     </div>
                     <div class="input-group">
-                        <label for="actualCost_${stage.name}">Фактическая стоимость ($):</label>
-                        <input type="number" id="actualCost_${stage.name}" value="${stage.actualCost || 0}" min="0">
+                        <label for="actualCost_${stage.safeName}">Фактическая стоимость ($):</label>
+                        <input type="number" id="actualCost_${stage.safeName}" value="${stage.actualCost || 0}" min="0">
                     </div>
                 `;
                 formDiv.appendChild(stageDiv);

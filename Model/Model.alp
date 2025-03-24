@@ -495,6 +495,7 @@ public class ServerManager {
             context.addServlet(new ServletHolder(new ExportDashboardServlet()), "/exportDashboard");
             context.addServlet(new ServletHolder(new RiskLogsServlet()), "/riskLogs");
             context.addServlet(new ServletHolder(new UpdateProgressServlet()), "/updateProgress");
+            context.addServlet(new ServletHolder(new LoadLatestDataServlet()), "/loadLatestData");
 
             server.start();
             System.out.println("Jetty Server started on port 8089");
@@ -507,7 +508,99 @@ public class ServerManager {
             }
         }
     }
+    
+    class LoadLatestDataServlet extends HttpServlet {
+        @Override
+        protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws IOException {
+            addCorsHeaders(resp);
+            try {
+                Connection localConnection = null;
+                try {
+                    localConnection = DriverManager.getConnection(DB_URL, DB_USER, DB_PASSWORD);
+                    
+                    // Получаем этапы
+                    PreparedStatement stageStmt = localConnection.prepareStatement(
+                    	    "SELECT name, duration, cost, dependencies, actual_duration, actual_cost " +
+                    	    "FROM stages " +
+                    	    "ORDER BY id ASC"
+                    	);
+                    	java.sql.ResultSet stageRs = stageStmt.executeQuery();
+                    	List<Stage> loadedStages = new ArrayList<>();
+                    	Gson gson = new Gson();
+                    	System.out.println("Загрузка этапов из базы данных...");
+                    	while (stageRs.next()) {
+                    	    Stage stage = new Stage();
+                    	    stage.name = stageRs.getString("name");
+                    	    stage.duration = stageRs.getDouble("duration");
+                    	    stage.cost = stageRs.getDouble("cost");
+                    	    String dependenciesJson = stageRs.getString("dependencies");
+                    	    stage.dependencies = gson.fromJson(dependenciesJson, new TypeToken<List<String>>(){}.getType());
+                    	    stage.actualDuration = stageRs.getDouble("actual_duration");
+                    	    stage.actualCost = stageRs.getDouble("actual_cost");
+                    	    stage.computeVariations();
+                    	    loadedStages.add(stage);
+                    	    System.out.println("Загружен этап: " + stage.name + ", duration: " + stage.duration + ", cost: " + stage.cost);
+                    	}
+                    	stageRs.close();
+                    	stageStmt.close();
+                    	System.out.println("Всего загружено этапов: " + loadedStages.size());
 
+                    // Получаем риски
+                    PreparedStatement riskStmt = localConnection.prepareStatement(
+                        "SELECT name, probability, impact_time, impact_cost, mitigated, strategy, category, priority " +
+                        "FROM risks " +
+                        "ORDER BY id DESC"
+                    );
+                    java.sql.ResultSet riskRs = riskStmt.executeQuery(); // Явно указываем java.sql.ResultSet
+                    List<Risk> loadedRisks = new ArrayList<>();
+                    
+                    while (riskRs.next()) {
+                        Risk risk = new Risk();
+                        risk.name = riskRs.getString("name");
+                        risk.probability = riskRs.getDouble("probability");
+                        risk.impactTime = riskRs.getDouble("impact_time");
+                        risk.impactCost = riskRs.getDouble("impact_cost");
+                        risk.mitigated = riskRs.getBoolean("mitigated");
+                        risk.strategy = riskRs.getString("strategy");
+                        risk.category = riskRs.getString("category");
+                        risk.priority = riskRs.getDouble("priority");
+                        risk.computeVariations();
+                        loadedRisks.add(risk);
+                    }
+                    riskRs.close();
+                    riskStmt.close();
+
+                    // Формируем ответ
+                    Map<String, Object> responseData = new HashMap<>();
+                    responseData.put("stages", loadedStages);
+                    responseData.put("risks", loadedRisks);
+
+                    resp.setContentType("application/json");
+                    resp.getWriter().write(gson.toJson(responseData));
+                    
+                } finally {
+                    if (localConnection != null) {
+                        try {
+                            localConnection.close();
+                        } catch (SQLException e) {
+                            System.err.println("Error closing connection: " + e.getMessage());
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                System.err.println("Ошибка в LoadLatestDataServlet: " + e.getMessage());
+                e.printStackTrace();
+                resp.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Ошибка загрузки данных: " + e.getMessage());
+            }
+        }
+
+        @Override
+        protected void doOptions(HttpServletRequest req, HttpServletResponse resp) throws IOException {
+            addCorsHeaders(resp);
+            resp.setStatus(HttpServletResponse.SC_OK);
+        }
+    }
+    
     class CreateModelServlet extends HttpServlet {
         @Override
         protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws IOException {
@@ -529,6 +622,10 @@ public class ServerManager {
                 // Прямо добавляем списки, так как modelData.stages и modelData.risks уже являются List<Stage> и List<Risk>
                 stages.addAll(modelData.stages != null ? modelData.stages : new ArrayList<>());
                 risks.addAll(modelData.risks != null ? modelData.risks : new ArrayList<>());
+
+                // Логируем количество загруженных этапов и рисков
+                System.out.println("Загружено этапов: " + stages.size());
+                System.out.println("Загружено рисков: " + risks.size());
 
                 // Вызываем computeVariations для всех этапов и рисков после десериализации
                 for (Stage stage : stages) {
@@ -827,21 +924,10 @@ public class ServerManager {
                         }
                     }
 
+                    // Пересчитываем симуляцию с учетом новых данных
                     runPertSimulation();
 
-                    scheduleVariance = 0.0;
-                    costVariance = 0.0;
-                    for (Stage stage : stages) {
-                        if (stage.actualDuration > 0) {
-                            double expectedDuration = (stage.durationOptimistic + 4 * stage.duration + stage.durationPessimistic) / 6.0;
-                            scheduleVariance += (stage.actualDuration - expectedDuration);
-                        }
-                        if (stage.actualCost > 0) {
-                            double expectedCost = (stage.costOptimistic + 4 * stage.cost + stage.costPessimistic) / 6.0;
-                            costVariance += (stage.actualCost - expectedCost);
-                        }
-                    }
-
+                    // Сохраняем обновленные данные в базу
                     uploadToPostgreSQL();
                     resp.getWriter().write("Прогресс обновлен. Отклонение по времени: " + scheduleVariance +
                             " дней, Отклонение по стоимости: $" + costVariance);
@@ -896,92 +982,40 @@ public class ServerManager {
         criticalRisks.clear();
         criticalStages.clear();
 
-        double totalTimeExpected = calculateCriticalPath();
+        // Количество итераций для симуляции Монте-Карло
+        final int ITERATIONS = 1000;
+        Random random = new Random();
+
+        // Рассчитываем базовую стоимость проекта (без учета рисков)
         baseCost = 0.0;
-        double timeVariance = 0.0;
-        double costVariance = 0.0;
-        double remainingMitigationBudget = mitigationBudget;
-
-        System.out.println("Starting PERT simulation...");
-        System.out.println("Number of stages: " + stages.size());
-        System.out.println("Number of risks: " + risks.size());
-        System.out.println("Mitigation budget: " + mitigationBudget);
-
         for (Stage stage : stages) {
-            double stageCostExpected = (stage.costOptimistic + 4 * stage.cost + stage.costPessimistic) / 6.0;
+            double stageCostExpected = stage.actualCost > 0 ? stage.actualCost :
+                    (stage.costOptimistic + 4 * stage.cost + stage.costPessimistic) / 6.0;
             baseCost += stageCostExpected;
         }
 
-        // Теперь проверяем критичность
-        for (Stage stage : stages) {
-            double stageTimeExpected = (stage.durationOptimistic + 4 * stage.duration + stage.durationPessimistic) / 6.0;
-            double stageCostExpected = (stage.costOptimistic + 4 * stage.cost + stage.costPessimistic) / 6.0;
+        double remainingMitigationBudget = mitigationBudget;
+        contingencyReserveUsed = 0; // Сбрасываем использованный резерв
 
-            double stageTimeStdDev = (stage.durationPessimistic - stage.durationOptimistic) / 6.0;
-            double stageCostStdDev = (stage.costPessimistic - stage.costOptimistic) / 6.0;
+        System.out.println("Starting PERT simulation with " + ITERATIONS + " iterations...");
+        System.out.println("Number of stages: " + stages.size());
+        System.out.println("Number of risks: " + risks.size());
+        System.out.println("Mitigation budget: " + mitigationBudget);
+        System.out.println("Base cost: " + baseCost);
 
-            double stageTimeVariance = Math.pow(stageTimeStdDev, 2);
-            double stageCostVariance = Math.pow(stageCostStdDev, 2);
-
-            timeVariance += stageTimeVariance;
-            costVariance += stageCostVariance;
-
-            System.out.println("Stage: " + stage.name +
-                    ", Duration Optimistic: " + stage.durationOptimistic +
-                    ", Duration Pessimistic: " + stage.durationPessimistic +
-                    ", Cost Optimistic: " + stage.costOptimistic +
-                    ", Cost Pessimistic: " + stage.costPessimistic +
-                    ", Time Expected: " + stageTimeExpected +
-                    ", Cost Expected: " + stageCostExpected +
-                    ", Time StdDev: " + stageTimeStdDev +
-                    ", Cost StdDev: " + stageCostStdDev +
-                    ", Time Variance: " + stageTimeVariance +
-                    ", Cost Variance: " + stageCostVariance);
-
-            if (stageTimeExpected > totalTimeExpected * 0.2 || stageCostExpected > baseCost * 0.2) {
-                criticalStages.add(stage);
-                System.out.println("Stage " + stage.name + " marked as critical");
-            }
-        }
-
+        // Обрабатываем риски (один раз перед симуляцией)
         for (Risk risk : risks) {
             risk.priority = risk.probability * (risk.impactTime + risk.impactCost / 1000.0);
             System.out.println("Risk: " + risk.name + ", Priority: " + risk.priority);
-        }
-
-        double riskTimeImpactExpected = 0.0;
-        double riskCostImpactExpected = 0.0;
-        double riskTimeVariance = 0.0;
-        double riskCostVariance = 0.0;
-
-        for (Risk risk : risks) {
-            double riskTimeExpected = (risk.impactTimeOptimistic + 4 * risk.impactTime + risk.impactTimePessimistic) / 6.0;
-            double riskCostExpected = (risk.impactCostOptimistic + 4 * risk.impactCost + risk.impactCostPessimistic) / 6.0;
-
-            double riskTimeStdDev = (risk.impactTimePessimistic - risk.impactTimeOptimistic) / 6.0;
-            double riskCostStdDev = (risk.impactCostPessimistic - risk.impactCostOptimistic) / 6.0;
-
-            double timeImpact = risk.probability * riskTimeExpected;
-            double costImpact = risk.probability * riskCostExpected;
-            double riskTimeVar = Math.pow(risk.probability * riskTimeStdDev, 2);
-            double riskCostVar = Math.pow(risk.probability * riskCostStdDev, 2);
 
             if (!risk.mitigated) {
                 if ("Mitigate".equals(risk.strategy) && remainingMitigationBudget >= 500) {
-                    timeImpact *= 0.5;
-                    costImpact *= 0.5;
-                    riskTimeVar *= 0.25;
-                    riskCostVar *= 0.25;
                     remainingMitigationBudget -= 500;
                     contingencyReserveUsed += 500;
                     risk.mitigated = true;
                     logRiskAction(risk.name, "Смягчён", "Риск смягчён с помощью стратегии Mitigate");
                     System.out.println("Risk " + risk.name + " mitigated (Mitigate)");
                 } else if ("Eliminate".equals(risk.strategy) && remainingMitigationBudget >= 2000) {
-                    timeImpact = risk.probability * 5.0;
-                    costImpact = 0.0;
-                    riskTimeVar = 0.0;
-                    riskCostVar = 0.0;
                     remainingMitigationBudget -= 2000;
                     contingencyReserveUsed += 2000;
                     risk.mitigated = true;
@@ -998,67 +1032,197 @@ public class ServerManager {
                     System.out.println("Risk " + risk.name + " set to Monitor");
                 }
             }
-
-            riskTimeImpactExpected += timeImpact;
-            riskCostImpactExpected += costImpact;
-            riskTimeVariance += riskTimeVar;
-            riskCostVariance += riskCostVar;
-
-            System.out.println("Risk: " + risk.name +
-                    ", Impact Time Optimistic: " + risk.impactTimeOptimistic +
-                    ", Impact Time Pessimistic: " + risk.impactTimePessimistic +
-                    ", Impact Cost Optimistic: " + risk.impactCostOptimistic +
-                    ", Impact Cost Pessimistic: " + risk.impactCostPessimistic +
-                    ", Time Impact: " + timeImpact +
-                    ", Cost Impact: " + costImpact +
-                    ", Time StdDev: " + riskTimeStdDev +
-                    ", Cost StdDev: " + riskCostStdDev +
-                    ", Time Variance: " + riskTimeVar +
-                    ", Cost Variance: " + riskCostVar);
         }
 
-        totalTime = totalTimeExpected + riskTimeImpactExpected;
-        totalCost = baseCost + riskCostImpactExpected + contingencyReserveUsed;
-        timeStdDev = Math.sqrt(timeVariance + riskTimeVariance);
-        costStdDev = Math.sqrt(costVariance + riskCostVariance);
+        // Симуляция Монте-Карло: 1000 итераций
+        for (int iter = 0; iter < ITERATIONS; iter++) {
+            // Рассчитываем общее время проекта для текущей итерации
+            double totalTimeIter = calculateCriticalPathForIteration(random);
 
-        System.out.println("Total Time Expected: " + totalTimeExpected +
-                ", Base Cost: " + baseCost +
-                ", Risk Time Impact: " + riskTimeImpactExpected +
-                ", Risk Cost Impact: " + riskCostImpactExpected +
-                ", Contingency Reserve Used: " + contingencyReserveUsed);
-        System.out.println("Final Total Time: " + totalTime +
-                ", Final Total Cost: " + totalCost +
-                ", Time StdDev: " + timeStdDev +
-                ", Cost StdDev: " + costStdDev);
+            // Рассчитываем стоимость и влияние рисков для текущей итерации
+            double totalCostIter = 0.0;
+            double riskTimeImpactIter = 0.0;
+            double riskCostImpactIter = 0.0;
 
+            // Учитываем стоимость этапов
+            for (Stage stage : stages) {
+                double stageCostIter;
+                if (stage.actualCost > 0) {
+                    stageCostIter = stage.actualCost;
+                } else {
+                    // Генерируем случайное значение стоимости на основе бета-распределения
+                    double mean = (stage.costOptimistic + 4 * stage.cost + stage.costPessimistic) / 6.0;
+                    double stdDev = (stage.costPessimistic - stage.costOptimistic) / 6.0;
+                    stageCostIter = mean + stdDev * random.nextGaussian();
+                    stageCostIter = Math.max(stage.costOptimistic, Math.min(stageCostIter, stage.costPessimistic));
+                }
+                totalCostIter += stageCostIter;
+            }
+
+            // Учитываем влияние рисков
+            for (Risk risk : risks) {
+                // Решаем, сработал ли риск в этой итерации
+                boolean riskTriggered = random.nextDouble() < risk.probability;
+
+                if (riskTriggered) {
+                    double riskTimeIter = (risk.impactTimeOptimistic + 4 * risk.impactTime + risk.impactTimePessimistic) / 6.0;
+                    double riskCostIter = (risk.impactCostOptimistic + 4 * risk.impactCost + risk.impactCostPessimistic) / 6.0;
+
+                    // Генерируем случайное значение влияния риска
+                    double riskTimeStdDev = (risk.impactTimePessimistic - risk.impactTimeOptimistic) / 6.0;
+                    double riskCostStdDev = (risk.impactCostPessimistic - risk.impactCostOptimistic) / 6.0;
+
+                    riskTimeIter = riskTimeIter + riskTimeStdDev * random.nextGaussian();
+                    riskCostIter = riskCostIter + riskCostStdDev * random.nextGaussian();
+
+                    riskTimeIter = Math.max(risk.impactTimeOptimistic, Math.min(riskTimeIter, risk.impactTimePessimistic));
+                    riskCostIter = Math.max(risk.impactCostOptimistic, Math.min(riskCostIter, risk.impactCostPessimistic));
+
+                    // Применяем смягчение
+                    if (risk.mitigated) {
+                        if ("Mitigate".equals(risk.strategy)) {
+                            riskTimeIter *= 0.5;
+                            riskCostIter *= 0.5;
+                        } else if ("Eliminate".equals(risk.strategy)) {
+                            riskTimeIter = 5.0; // Фиксированное время на устранение
+                            riskCostIter = 0.0;
+                        }
+                    }
+
+                    riskTimeImpactIter += riskTimeIter;
+                    riskCostImpactIter += riskCostIter;
+                }
+            }
+
+            totalTimeIter += riskTimeImpactIter;
+            totalCostIter += riskCostImpactIter + contingencyReserveUsed;
+
+            timeResults.add(totalTimeIter);
+            costResults.add(totalCostIter);
+        }
+
+        // Рассчитываем средние значения
+        totalTime = timeResults.stream().mapToDouble(Double::doubleValue).average().orElse(0.0);
+        totalCost = costResults.stream().mapToDouble(Double::doubleValue).average().orElse(0.0);
+
+        // Рассчитываем стандартные отклонения
+        double timeMean = totalTime;
+        double costMean = totalCost;
+        double timeVariance = timeResults.stream().mapToDouble(t -> Math.pow(t - timeMean, 2)).average().orElse(0.0);
+        double costVariance = costResults.stream().mapToDouble(c -> Math.pow(c - costMean, 2)).average().orElse(0.0);
+        timeStdDev = Math.sqrt(timeVariance);
+        costStdDev = Math.sqrt(costVariance);
+
+        // Рассчитываем доверительные интервалы (95%)
         timeConfidenceLower = totalTime - 1.96 * timeStdDev;
         timeConfidenceUpper = totalTime + 1.96 * timeStdDev;
         costConfidenceLower = totalCost - 1.96 * costStdDev;
         costConfidenceUpper = totalCost + 1.96 * costStdDev;
 
-        time90thPercentile = totalTime + 1.28 * timeStdDev;
-        cost90thPercentile = totalCost + 1.28 * costStdDev;
+        // Рассчитываем 90-й процентиль
+        List<Double> sortedTimeResults = new ArrayList<>(timeResults);
+        List<Double> sortedCostResults = new ArrayList<>(costResults);
+        Collections.sort(sortedTimeResults);
+        Collections.sort(sortedCostResults);
+        int percentileIndex = (int) (0.9 * ITERATIONS);
+        time90thPercentile = sortedTimeResults.get(percentileIndex);
+        cost90thPercentile = sortedCostResults.get(percentileIndex);
 
-        timeExceedProbability = timeStdDev == 0 ? (totalTime > timeThreshold ? 1.0 : 0.0) :
-                0.5 * (1 - erf((timeThreshold - totalTime) / (timeStdDev * Math.sqrt(2))));
-        costExceedProbability = costStdDev == 0 ? (totalCost > costThreshold ? 1.0 : 0.0) :
-                0.5 * (1 - erf((costThreshold - totalCost) / (costStdDev * Math.sqrt(2))));
-        timeTargetProbability = timeStdDev == 0 ? (totalTime <= targetTime ? 1.0 : 0.0) :
-                0.5 * (1 + erf((targetTime - totalTime) / (timeStdDev * Math.sqrt(2))));
-        costTargetProbability = costStdDev == 0 ? (totalCost <= targetCost ? 1.0 : 0.0) :
-                0.5 * (1 + erf((targetCost - totalCost) / (costStdDev * Math.sqrt(2))));
+        // Рассчитываем вероятности
+        timeExceedProbability = timeResults.stream().filter(t -> t > timeThreshold).count() / (double) ITERATIONS;
+        costExceedProbability = costResults.stream().filter(c -> c > costThreshold).count() / (double) ITERATIONS;
+        timeTargetProbability = timeResults.stream().filter(t -> t <= targetTime).count() / (double) ITERATIONS;
+        costTargetProbability = costResults.stream().filter(c -> c <= targetCost).count() / (double) ITERATIONS;
 
-        timeResults.add(totalTime);
-        costResults.add(totalCost);
+        // Определяем критические этапы
+        double totalTimeExpected = calculateCriticalPath();
+        for (Stage stage : stages) {
+            double stageTimeExpected = stage.actualDuration > 0 ? stage.actualDuration :
+                    (stage.durationOptimistic + 4 * stage.duration + stage.durationPessimistic) / 6.0;
+            double stageCostExpected = stage.actualCost > 0 ? stage.actualCost :
+                    (stage.costOptimistic + 4 * stage.cost + stage.costPessimistic) / 6.0;
+
+            if (stageTimeExpected > totalTimeExpected * 0.2 || stageCostExpected > baseCost * 0.2) {
+                criticalStages.add(stage);
+                System.out.println("Stage " + stage.name + " marked as critical");
+            }
+        }
+
+        // Пересчитываем отклонения
+        scheduleVariance = 0.0;
+        costVariance = 0.0;
+        for (Stage stage : stages) {
+            double expectedDuration = (stage.durationOptimistic + 4 * stage.duration + stage.durationPessimistic) / 6.0;
+            double expectedCost = (stage.costOptimistic + 4 * stage.cost + stage.costPessimistic) / 6.0;
+
+            if (stage.actualDuration > 0) {
+                scheduleVariance += (stage.actualDuration - expectedDuration);
+            }
+            if (stage.actualCost > 0) {
+                costVariance += (stage.actualCost - expectedCost);
+            }
+        }
 
         System.out.println("PERT simulation completed.");
+        System.out.println("Total Time (mean): " + totalTime +
+                ", Total Cost (mean): " + totalCost);
         System.out.println("Time 90th Percentile: " + time90thPercentile +
                 ", Cost 90th Percentile: " + cost90thPercentile);
         System.out.println("Time Exceed Probability: " + timeExceedProbability +
                 ", Cost Exceed Probability: " + costExceedProbability);
         System.out.println("Time Target Probability: " + timeTargetProbability +
                 ", Cost Target Probability: " + costTargetProbability);
+        System.out.println("Schedule Variance: " + scheduleVariance +
+                ", Cost Variance: " + costVariance);
+    }
+
+    // Вспомогательный метод для расчета критического пути в каждой итерации
+    private double calculateCriticalPathForIteration(Random random) {
+        if (stages.isEmpty()) return 0.0;
+
+        double[] earliestStart = new double[stages.size()];
+        double[] earliestFinish = new double[stages.size()];
+
+        // Прямой проход: вычисляем earliestStart и earliestFinish
+        for (int i = 0; i < stages.size(); i++) {
+            Stage stage = stages.get(i);
+            double stageTimeIter;
+
+            if (stage.actualDuration > 0) {
+                stageTimeIter = stage.actualDuration;
+            } else {
+                // Генерируем случайное значение длительности на основе бета-распределения
+                double mean = (stage.durationOptimistic + 4 * stage.duration + stage.durationPessimistic) / 6.0;
+                double stdDev = (stage.durationPessimistic - stage.durationOptimistic) / 6.0;
+                stageTimeIter = mean + stdDev * random.nextGaussian();
+                stageTimeIter = Math.max(stage.durationOptimistic, Math.min(stageTimeIter, stage.durationPessimistic));
+            }
+
+            earliestStart[i] = 0;
+
+            for (String dep : stage.dependencies) {
+                int depIndex = -1;
+                for (int j = 0; j < stages.size(); j++) {
+                    if (stages.get(j).name.equals(dep)) {
+                        depIndex = j;
+                        break;
+                    }
+                }
+                if (depIndex != -1 && depIndex < i) {
+                    earliestStart[i] = Math.max(earliestStart[i], earliestFinish[depIndex]);
+                }
+            }
+            earliestFinish[i] = earliestStart[i] + stageTimeIter;
+        }
+
+        double projectDuration = 0.0;
+        for (int i = 0; i < stages.size(); i++) {
+            if (stages.get(i).dependencies.isEmpty() || earliestFinish[i] > projectDuration) {
+                projectDuration = earliestFinish[i];
+            }
+        }
+
+        return projectDuration;
     }
 
     private double calculateCriticalPath() {
@@ -1069,9 +1233,18 @@ public class ServerManager {
         double[] latestStart = new double[stages.size()];
         double[] latestFinish = new double[stages.size()];
 
+        // Прямой проход: вычисляем earliestStart и earliestFinish
         for (int i = 0; i < stages.size(); i++) {
             Stage stage = stages.get(i);
-            double stageTimeExpected = (stage.durationOptimistic + 4 * stage.duration + stage.durationPessimistic) / 6.0;
+            double stageTimeExpected;
+
+            // Используем фактическую длительность, если она доступна
+            if (stage.actualDuration > 0) {
+                stageTimeExpected = stage.actualDuration;
+            } else {
+                stageTimeExpected = (stage.durationOptimistic + 4 * stage.duration + stage.durationPessimistic) / 6.0;
+            }
+
             earliestStart[i] = 0;
 
             for (String dep : stage.dependencies) {
@@ -1089,14 +1262,28 @@ public class ServerManager {
             earliestFinish[i] = earliestStart[i] + stageTimeExpected;
         }
 
-        double projectDuration = earliestFinish[stages.size() - 1];
+        double projectDuration = 0.0;
+        for (int i = 0; i < stages.size(); i++) {
+            if (stages.get(i).dependencies.isEmpty() || earliestFinish[i] > projectDuration) {
+                projectDuration = earliestFinish[i];
+            }
+        }
+
+        // Обратный проход: вычисляем latestStart и latestFinish
         for (int i = 0; i < stages.size(); i++) {
             latestFinish[i] = projectDuration;
         }
 
         for (int i = stages.size() - 1; i >= 0; i--) {
             Stage stage = stages.get(i);
-            double stageTimeExpected = (stage.durationOptimistic + 4 * stage.duration + stage.durationPessimistic) / 6.0;
+            double stageTimeExpected;
+
+            if (stage.actualDuration > 0) {
+                stageTimeExpected = stage.actualDuration;
+            } else {
+                stageTimeExpected = (stage.durationOptimistic + 4 * stage.duration + stage.durationPessimistic) / 6.0;
+            }
+
             latestStart[i] = latestFinish[i] - stageTimeExpected;
 
             for (int j = 0; j < stages.size(); j++) {
@@ -1109,7 +1296,7 @@ public class ServerManager {
 
         return projectDuration;
     }
-
+    
     private double erf(double z) {
         double t = 1.0 / (1.0 + 0.5 * Math.abs(z));
         double ans = 1 - t * Math.exp(-z * z - 1.26551223 +
@@ -1201,7 +1388,9 @@ public class ServerManager {
                 "INSERT INTO stages (name, duration, cost, dependencies, actual_duration, actual_cost) VALUES (?, ?, ?, ?::jsonb, ?, ?)"
             );
             Gson gson = new Gson();
+            System.out.println("Сохраняем этапы в базу данных...");
             for (Stage stage : stages) {
+                System.out.println("Сохранение этапа: " + stage.name + ", duration: " + stage.duration + ", cost: " + stage.cost);
                 stageStmt.setString(1, stage.name);
                 stageStmt.setDouble(2, stage.duration);
                 stageStmt.setDouble(3, stage.cost);

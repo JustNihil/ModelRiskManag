@@ -171,11 +171,17 @@ tr:hover {
     padding: 20px;
 }
 
-h1, h2 {
+h1, h2, h3, h4 {
     color: #FFFFFF;
     font-weight: 700;
     margin-bottom: 15px;
     margin-top: 0;
+}
+
+h4 {
+    font-size: 16px;
+    margin-bottom: 10px;
+    text-align: center;
 }
 
 #dashboardSummary, #recommendations {
@@ -198,6 +204,47 @@ h1, h2 {
     margin-left: 5px;
 }
 
+/* Стили для графиков */
+.chart-container {
+    display: inline-block;
+    margin: 10px;
+}
+
+.chart-centered {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+    margin: 0 auto;
+    width: 100%; /* Родительский контейнер может быть шире, но canvas ограничим */
+}
+
+/* Фиксируем размеры для графика стоимости */
+#metricsChart {
+    width: 600px !important;
+    height: 200px !important;
+    max-width: 600px !important;
+    max-height: 200px !important;
+}
+
+/* Размеры для остальных графиков */
+#costImpactChart,
+#timeImpactChart,
+#costDistributionChart,
+#timeDistributionChart {
+    width: 500px !important;
+    height: 300px !important;
+    max-width: 500px !important;
+    max-height: 300px !important;
+}
+
+.chart-row {
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 20px;
+}
+
 @media (max-width: 768px) {
     .input-row, .action-buttons {
         flex-direction: column;
@@ -207,5 +254,26 @@ h1, h2 {
     }
     table {
         font-size: 12px;
+    }
+    .chart-row {
+        flex-direction: column;
+        align-items: center;
+    }
+    .chart-container {
+        margin: 10px 0;
+    }
+    /* Уменьшаем размеры графиков на маленьких экранах */
+    #metricsChart {
+        width: 100% !important;
+        max-width: 400px !important;
+        height: 150px !important;
+    }
+    #costImpactChart,
+    #timeImpactChart,
+    #costDistributionChart,
+    #timeDistributionChart {
+        width: 100% !important;
+        max-width: 350px !important;
+        height: 200px !important;
     }
 }
