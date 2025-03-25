@@ -66,67 +66,72 @@ export function createHistogramData(data, bins) {
 export function generateRecommendations(metrics, risks, dashboardData) {
     const recs = [];
 
-    if (metrics.total_time > 100) {
-        recs.push("Ожидаемое время проекта превышает 100 дней. Рассмотрите возможность ускорения этапов.");
+    // Проверка времени
+    if (metrics.total_time > dashboardData?.targetTime) {
+        recs.push(`Ожидаемое время проекта (${metrics.total_time.toFixed(1)} дней) превышает целевое время (${dashboardData.targetTime.toFixed(1)} дней). Рассмотрите ускорение этапов или пересмотр сроков.`);
     }
-    if (dashboardData?.timeStdDev > 10) {
-        recs.push(`Высокая неопределённость по времени: стандартное отклонение составляет ${dashboardData.timeStdDev.toFixed(1)} дней. Сфокусируйтесь на снижении неопределённости в критических этапах.`);
+    if (dashboardData?.timeStdDev > dashboardData?.targetTime * 0.1) {
+        recs.push(`Высокая неопределённость по времени: стандартное отклонение (${dashboardData.timeStdDev.toFixed(1)} дней) превышает 10% от целевого времени (${dashboardData.targetTime.toFixed(1)} дней). Сфокусируйтесь на снижении неопределённости.`);
     }
-    if (dashboardData?.timeTargetProbability < 0.5) {
-        recs.push(`Низкая вероятность уложиться в целевое время (${dashboardData.targetTime.toFixed(1)} дней): ${(dashboardData.timeTargetProbability * 100).toFixed(1)}%. Добавьте буфер времени или пересмотрите этапы.`);
+    if (dashboardData?.timeTargetProbability < 0.7) {
+        recs.push(`Вероятность уложиться в целевое время (${dashboardData.targetTime.toFixed(1)} дней) ниже 70%: ${(dashboardData.timeTargetProbability * 100).toFixed(1)}%. Рекомендуется добавить буфер времени.`);
     }
-    if (dashboardData?.timeExceedProbability > 0.2) {
-        recs.push(`Высокий риск задержки: вероятность превышения ${dashboardData.timeThreshold.toFixed(1)} дней составляет ${(dashboardData.timeExceedProbability * 100).toFixed(1)}%. Рассмотрите меры по ускорению критических этапов.`);
+    if (dashboardData?.timeExceedProbability > 0.1) {
+        recs.push(`Риск превышения порогового времени (${dashboardData.timeThreshold.toFixed(1)} дней) составляет ${(dashboardData.timeExceedProbability * 100).toFixed(1)}%. Ускорьте ключевые этапы или пересмотрите риски.`);
     }
-    if (dashboardData?.criticalStages && dashboardData.criticalStages.length > 0) {
-        const criticalStageNames = dashboardData.criticalStages.map(stage => stage.name).join(', ');
-        recs.push(`Критические этапы, вносящие наибольшую неопределённость: ${criticalStageNames}. Проверьте возможность оптимизации этих этапов.`);
-    }
-    if (dashboardData?.scheduleVariance && dashboardData.scheduleVariance > 0) {
-        recs.push(`Проект отстает от графика на ${dashboardData.scheduleVariance.toFixed(1)} дней. Ускорьте выполнение этапов.`);
+    if (dashboardData?.scheduleVariance > 0) {
+        recs.push(`Проект отстает от графика на ${dashboardData.scheduleVariance.toFixed(1)} дней. Ускорьте выполнение этапов или пересмотрите план.`);
     }
 
-    if (metrics.total_cost > 50000) {
-        recs.push("Ожидаемая стоимость проекта превышает 50,000$. Рассмотрите оптимизацию бюджета.");
+    // Проверка стоимости
+    if (metrics.total_cost > dashboardData?.targetCost) {
+        recs.push(`Ожидаемая стоимость проекта ($${metrics.total_cost.toFixed(0)}) превышает целевой бюджет ($${dashboardData.targetCost.toFixed(0)}). Оптимизируйте затраты или пересмотрите бюджет.`);
+    } else if (metrics.total_cost > metrics.base_cost) {
+        recs.push(`Ожидаемая стоимость ($${metrics.total_cost.toFixed(0)}) выше базовой ($${metrics.base_cost.toFixed(0)}), но в пределах целевого бюджета ($${dashboardData.targetCost.toFixed(0)}). Контролируйте влияние рисков.`);
     }
-    if (dashboardData?.costStdDev > 5000) {
-        recs.push(`Высокая неопределённость по стоимости: стандартное отклонение составляет $${dashboardData.costStdDev.toFixed(0)}. Сфокусируйтесь на снижении неопределённости в критических рисках.`);
+    if (dashboardData?.costStdDev > dashboardData?.targetCost * 0.1) {
+        recs.push(`Высокая неопределённость по стоимости: стандартное отклонение ($${dashboardData.costStdDev.toFixed(0)}) превышает 10% от целевого бюджета ($${dashboardData.targetCost.toFixed(0)}). Снизьте неопределённость в затратах.`);
     }
-    if (dashboardData?.costTargetProbability < 0.5) {
-        recs.push(`Низкая вероятность уложиться в целевой бюджет ($${dashboardData.targetCost.toFixed(0)}): ${(dashboardData.costTargetProbability * 100).toFixed(1)}%. Добавьте финансовый буфер или пересмотрите затраты.`);
+    if (dashboardData?.costTargetProbability < 0.7) {
+        recs.push(`Вероятность уложиться в целевой бюджет ($${dashboardData.targetCost.toFixed(0)}) ниже 70%: ${(dashboardData.costTargetProbability * 100).toFixed(1)}%. Добавьте финансовый буфер или оптимизируйте затраты.`);
     }
-    if (dashboardData?.costExceedProbability > 0.2) {
-        recs.push(`Высокий риск превышения бюджета: вероятность превышения $${dashboardData.costThreshold.toFixed(0)} составляет ${(dashboardData.costExceedProbability * 100).toFixed(1)}%. Рассмотрите меры по снижению затрат.`);
+    if (dashboardData?.costExceedProbability > 0.1) {
+        recs.push(`Риск превышения пороговой стоимости ($${dashboardData.costThreshold.toFixed(0)}) составляет ${(dashboardData.costExceedProbability * 100).toFixed(1)}%. Рассмотрите меры по снижению затрат.`);
     }
-    if (dashboardData?.costVariance && dashboardData.costVariance > 0) {
-        recs.push(`Проект превышает бюджет на $${dashboardData.costVariance.toFixed(0)}. Оптимизируйте затраты.`);
-    }
-
-    if (risks.some(r => r.priority > 10)) {
-        const highPriorityRisks = risks.filter(r => r.priority > 10).map(r => r.name).join(', ');
-        recs.push(`Обратите внимание на риски с высоким приоритетом (>10): ${highPriorityRisks}. Разработайте стратегии их снижения.`);
-    }
-    if (dashboardData?.criticalRisks && dashboardData.criticalRisks.length > 0) {
-        const criticalRiskNames = dashboardData.criticalRisks.map(risk => risk.name).join(', ');
-        recs.push(`Критические риски, вносящие наибольшую неопределённость: ${criticalRiskNames}. Приоритетно разработайте меры по их управлению.`);
+    if (dashboardData?.costVariance > 0 && metrics.total_cost > dashboardData?.targetCost) {
+        recs.push(`Фактические затраты превышают плановые на $${dashboardData.costVariance.toFixed(0)}. Проверьте этапы с отклонениями и оптимизируйте расходы.`);
     }
 
-    if (dashboardData?.timeConfidenceUpper > dashboardData?.timeThreshold) {
-        recs.push(`Верхняя граница доверительного интервала времени (${dashboardData.timeConfidenceUpper.toFixed(1)} дней) превышает пороговое значение (${dashboardData.timeThreshold.toFixed(1)} дней). Увеличьте буфер времени или пересмотрите риски.`);
+    // Проверка управления рисками
+    const mitigationUsed = (metrics.mitigation_budget || 0) - (dashboardData?.remainingMitigationBudget || 0);
+    if (mitigationUsed > metrics.mitigation_budget * 0.9) {
+        recs.push(`Бюджет на управление рисками почти исчерпан: использовано $${mitigationUsed.toFixed(0)} из $${metrics.mitigation_budget.toFixed(0)}. Увеличьте бюджет или пересмотрите стратегии.`);
+    } else if (mitigationUsed < metrics.mitigation_budget * 0.2 && risks.some(r => !r.mitigated && r.priority > 5)) {
+        recs.push(`Использовано менее 20% бюджета на управление рисками ($${mitigationUsed.toFixed(0)} из $${metrics.mitigation_budget.toFixed(0)}), но есть нерешённые риски с приоритетом > 5. Рассмотрите активное смягчение.`);
     }
-    if (dashboardData?.costConfidenceUpper > dashboardData?.costThreshold) {
-        recs.push(`Верхняя граница доверительного интервала стоимости ($${dashboardData.costConfidenceUpper.toFixed(0)}) превышает пороговое значение ($${dashboardData.costThreshold.toFixed(0)}). Увеличьте бюджетный резерв или пересмотрите затраты.`);
-    }
-
     if (dashboardData?.contingencyReserveUsed > dashboardData?.contingencyReserve * 0.8) {
-        recs.push(`Использовано более 80% резерва на риски ($${dashboardData.contingencyReserveUsed.toFixed(0)} из $${dashboardData.contingencyReserve.toFixed(0)}). Рассмотрите увеличение резерва.`);
+        recs.push(`Резерв на непредвиденные расходы почти исчерпан: использовано $${dashboardData.contingencyReserveUsed.toFixed(0)} из $${dashboardData.contingencyReserve.toFixed(0)}. Увеличьте резерв или устраните риски.`);
     }
-    if (risks.some(r => r.strategy === "Ignore" && r.priority > 5)) {
-        const ignoredRisks = risks.filter(r => r.strategy === "Ignore" && r.priority > 5).map(r => r.name).join(', ');
-        recs.push(`Риски с приоритетом выше 5 игнорируются: ${ignoredRisks}. Рекомендуется разработать стратегии управления для этих рисков.`);
+    if (risks.some(r => r.strategy === "Ignore" && r.priority > 10)) {
+        const ignoredHighRisks = risks.filter(r => r.strategy === "Ignore" && r.priority > 10).map(r => r.name).join(', ');
+        recs.push(`Высокоприоритетные риски (${ignoredHighRisks}) игнорируются. Рекомендуется разработать стратегии управления.`);
     }
 
-    return recs.length ? recs : ["Нет критических рекомендаций на данный момент."];
+    // Дополнительные рекомендации
+    const highImpactRisks = risks.filter(r => r.impactCost > dashboardData?.targetCost * 0.1 || r.impactTime > dashboardData?.targetTime * 0.1);
+    if (highImpactRisks.length > 0) {
+        const names = highImpactRisks.map(r => r.name).join(', ');
+        recs.push(`Риски с высоким потенциальным воздействием (${names}) могут значительно повлиять на проект. Приоритетно разработайте меры управления.`);
+    }
+    if (dashboardData?.criticalStages?.length > 0) {
+        const criticalStageNames = dashboardData.criticalStages.map(s => s.name).join(', ');
+        recs.push(`Критические этапы (${criticalStageNames}) вносят значительную неопределённость. Оптимизируйте их выполнение.`);
+    }
+    if (dashboardData?.remainingMitigationBudget > 0 && dashboardData?.costConfidenceUpper > dashboardData?.targetCost) {
+        recs.push(`Верхняя граница стоимости ($${dashboardData.costConfidenceUpper.toFixed(0)}) превышает целевой бюджет ($${dashboardData.targetCost.toFixed(0)}). Используйте остаток бюджета на управление рисками ($${dashboardData.remainingMitigationBudget.toFixed(0)}) для смягчения ключевых рисков.`);
+    }
+
+    return recs.length ? recs : ["Проект находится в пределах целевых показателей. Продолжайте мониторинг рисков и прогресса."];
 }
 
 export function updateRiskLogsTable(logs) {
