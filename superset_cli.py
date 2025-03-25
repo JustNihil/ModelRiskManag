@@ -71,7 +71,7 @@ def export_risks(output_file="risks.json"):
         with get_db_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute("""
-                    SELECT name, probability, impact_time, impact_cost, mitigated, strategy, category, priority
+                    SELECT name, probability, impact_time, impact_cost, mitigated, strategy, category, priority, mitigation_cost
                     FROM risks
                 """)
                 risks = cur.fetchall()
@@ -83,7 +83,8 @@ def export_risks(output_file="risks.json"):
                     "mitigated": bool(r["mitigated"]),
                     "strategy": r["strategy"] or "Ignore",
                     "category": r["category"] or "Не указано",
-                    "priority": float(r["priority"] or 0.0)
+                    "priority": float(r["priority"] or 0.0),
+                    "mitigationCost": float(r["mitigation_cost"] or 0.0)  # Добавляем mitigation_cost
                 } for r in risks]
                 with open(output_file, "w", encoding="utf-8") as f:
                     json.dump(risks_list, f)

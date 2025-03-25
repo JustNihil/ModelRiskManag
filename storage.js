@@ -34,6 +34,9 @@ export async function loadData() {
         updateStagesTable();
         updateRisksTable();
         
+        // Обновляем форму прогресса
+        window.updateProgressForm(); // Добавляем вызов функции
+
         alert("Последние данные успешно загружены из базы данных.");
     } catch (error) {
         console.error('Ошибка загрузки данных:', error);

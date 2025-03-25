@@ -310,7 +310,8 @@ public class ServerManager {
     double baseCost = 0; // Базовая стоимость без учета рисков
     double scheduleVariance = 0; // Отклонение по времени
     double costVariance = 0; // Отклонение по стоимости
-
+    double remainingMitigationBudget; // Остаток бюджета на управление рисками
+    
     private static final String DB_URL = "jdbc:postgresql://localhost:5435/risk_db";
     private static final String DB_USER = "risk_user";
     private static final String DB_PASSWORD = "235521";
@@ -356,8 +357,7 @@ public class ServerManager {
         double priority;
         double impactTimeOptimistic, impactTimePessimistic;
         double impactCostOptimistic, impactCostPessimistic;
-
-        Risk() {}
+        double mitigationCost; // Новое поле для хранения затрат на управление риском
 
         Risk(String name, double probability, double impactTime, double impactCost, String strategy, String category) {
             this.name = name;
@@ -367,9 +367,18 @@ public class ServerManager {
             this.mitigated = false;
             this.strategy = strategy != null && !strategy.isEmpty() ? strategy : "Ignore";
             this.category = category != null ? category : "Не указано";
+            this.mitigationCost = 0.0; // Инициализация
             computeVariations();
         }
 
+	     // Пустой конструктор
+	        Risk() {
+	            this.mitigated = false;
+	            this.strategy = "Ignore";
+	            this.category = "Не указано";
+	            this.mitigationCost = 0.0;
+	        }
+        
         void computeVariations() {
             this.impactTimeOptimistic = impactTime * 0.6;
             this.impactTimePessimistic = impactTime * 1.4;
@@ -378,7 +387,7 @@ public class ServerManager {
             this.priority = probability * (impactTime + impactCost / 1000);
         }
     }
-
+    
     static class RiskLog {
         String riskName, action, details;
 
@@ -795,19 +804,16 @@ public class ServerManager {
             addCorsHeaders(resp);
             try {
                 System.out.println("Начинаем экспорт метрик...");
-                // Сбрасываем флаг mitigated и contingencyReserveUsed перед симуляцией
                 for (Risk risk : risks) {
                     risk.mitigated = false;
                 }
-                contingencyReserveUsed = 0; // Сбрасываем использованный резерв
-
-                runPertSimulation(); // Выполняем симуляцию
-                uploadToPostgreSQL(); // Сохраняем результаты симуляции в базу данных
+                contingencyReserveUsed = 0;
+                runPertSimulation();
+                uploadToPostgreSQL();
                 String[] metricsCmd = {PYTHON_PATH, SUPERSET_CLI_PATH, "export_metrics"};
                 String metricsJson = runPythonCommand(metricsCmd);
                 System.out.println("Метрики экспортированы: " + metricsJson);
 
-                System.out.println("Начинаем экспорт рисков...");
                 String[] risksCmd = {PYTHON_PATH, SUPERSET_CLI_PATH, "export_risks"};
                 String risksJson = runPythonCommand(risksCmd);
                 System.out.println("Риски экспортированы: " + risksJson);
@@ -816,17 +822,8 @@ public class ServerManager {
                 Object metrics = gson.fromJson(metricsJson, Object.class);
                 List<Risk> risksData = gson.fromJson(risksJson, new TypeToken<List<Risk>>(){}.getType());
 
-                if (metrics == null) {
-                    throw new Exception("Ошибка экспорта метрик: результат null");
-                }
-                if (metrics instanceof java.util.Map && ((java.util.Map<?, ?>) metrics).containsKey("error")) {
-                    throw new Exception("Ошибка экспорта метрик: " + ((java.util.Map<?, ?>) metrics).get("error"));
-                }
-                if (risksData == null) {
-                    throw new Exception("Ошибка экспорта рисков: результат null");
-                }
-                if (risksData instanceof java.util.Map && ((java.util.Map<?, ?>) risksData).containsKey("error")) {
-                    throw new Exception("Ошибка экспорта рисков: " + ((java.util.Map<?, ?>) risksData).get("error"));
+                if (metrics == null || risksData == null) {
+                    throw new Exception("Ошибка экспорта: метрики или риски null");
                 }
 
                 Map<String, Object> dashboardDataMap = new HashMap<>();
@@ -855,9 +852,7 @@ public class ServerManager {
                 dashboardDataMap.put("baseCost", baseCost);
                 dashboardDataMap.put("scheduleVariance", scheduleVariance);
                 dashboardDataMap.put("costVariance", costVariance);
-
-                System.out.println("Exporting baseCost: " + baseCost);
-                System.out.println("Exporting contingencyReserveUsed: " + contingencyReserveUsed);
+                dashboardDataMap.put("remainingMitigationBudget", remainingMitigationBudget); // Добавлено
 
                 String dashboardData = gson.toJson(dashboardDataMap);
 
@@ -869,7 +864,7 @@ public class ServerManager {
                 resp.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Ошибка экспорта: " + e.getMessage());
             }
         }
-
+    
         @Override
         protected void doOptions(HttpServletRequest req, HttpServletResponse resp) throws IOException {
             addCorsHeaders(resp);
@@ -982,7 +977,6 @@ public class ServerManager {
         criticalRisks.clear();
         criticalStages.clear();
 
-        // Количество итераций для симуляции Монте-Карло
         final int ITERATIONS = 1000;
         Random random = new Random();
 
@@ -994,7 +988,8 @@ public class ServerManager {
             baseCost += stageCostExpected;
         }
 
-        double remainingMitigationBudget = mitigationBudget;
+        // Инициализируем остаток бюджета на управление рисками
+        remainingMitigationBudget = mitigationBudget; // Используем поле класса
         contingencyReserveUsed = 0; // Сбрасываем использованный резерв
 
         System.out.println("Starting PERT simulation with " + ITERATIONS + " iterations...");
@@ -1003,7 +998,7 @@ public class ServerManager {
         System.out.println("Mitigation budget: " + mitigationBudget);
         System.out.println("Base cost: " + baseCost);
 
-        // Обрабатываем риски (один раз перед симуляцией)
+        // Обрабатываем риски перед симуляцией
         for (Risk risk : risks) {
             risk.priority = risk.probability * (risk.impactTime + risk.impactCost / 1000.0);
             System.out.println("Risk: " + risk.name + ", Priority: " + risk.priority);
@@ -1011,64 +1006,58 @@ public class ServerManager {
             if (!risk.mitigated) {
                 if ("Mitigate".equals(risk.strategy) && remainingMitigationBudget >= 500) {
                     remainingMitigationBudget -= 500;
-                    contingencyReserveUsed += 500;
+                    risk.mitigationCost = 500; // Записываем затраты
                     risk.mitigated = true;
-                    logRiskAction(risk.name, "Смягчён", "Риск смягчён с помощью стратегии Mitigate");
-                    System.out.println("Risk " + risk.name + " mitigated (Mitigate)");
+                    logRiskAction(risk.name, "Смягчён", "Риск смягчён с помощью стратегии Mitigate за $500");
+                    System.out.println("Risk " + risk.name + " mitigated (Mitigate) for $500");
                 } else if ("Eliminate".equals(risk.strategy) && remainingMitigationBudget >= 2000) {
                     remainingMitigationBudget -= 2000;
-                    contingencyReserveUsed += 2000;
+                    risk.mitigationCost = 2000; // Записываем затраты
                     risk.mitigated = true;
-                    logRiskAction(risk.name, "Устранён", "Риск устранён с помощью стратегии Eliminate");
-                    System.out.println("Risk " + risk.name + " mitigated (Eliminate)");
-                } else if (risk.priority > 10) {
-                    criticalRisks.add(risk);
+                    logRiskAction(risk.name, "Устранён", "Риск устранён с помощью стратегии Eliminate за $2000");
+                    System.out.println("Risk " + risk.name + " mitigated (Eliminate) for $2000");
+                } else if (risk.priority > 10 && remainingMitigationBudget >= 500) {
+                    remainingMitigationBudget -= 500;
+                    risk.mitigationCost = 500; // Записываем затраты
                     risk.strategy = "Mitigate";
                     risk.mitigated = true;
-                    logRiskAction(risk.name, "Автосмягчение", "Риск с высоким приоритетом автоматически смягчён");
-                    System.out.println("Risk " + risk.name + " auto-mitigated due to high priority");
+                    logRiskAction(risk.name, "Автосмягчение", "Риск с высоким приоритетом автоматически смягчён за $500");
+                    System.out.println("Risk " + risk.name + " auto-mitigated due to high priority for $500");
                 } else if (risk.priority > 5) {
                     risk.strategy = "Monitor";
+                    risk.mitigationCost = 0.0; // Явно указываем, что затрат нет
                     System.out.println("Risk " + risk.name + " set to Monitor");
+                } else {
+                    risk.strategy = "Ignore";
+                    risk.mitigationCost = 0.0; // Явно указываем, что затрат нет
+                    System.out.println("Risk " + risk.name + " set to Ignore");
                 }
             }
         }
 
-        // Симуляция Монте-Карло: 1000 итераций
+        // Симуляция Монте-Карло
         for (int iter = 0; iter < ITERATIONS; iter++) {
-            // Рассчитываем общее время проекта для текущей итерации
             double totalTimeIter = calculateCriticalPathForIteration(random);
-
-            // Рассчитываем стоимость и влияние рисков для текущей итерации
             double totalCostIter = 0.0;
             double riskTimeImpactIter = 0.0;
             double riskCostImpactIter = 0.0;
 
             // Учитываем стоимость этапов
             for (Stage stage : stages) {
-                double stageCostIter;
-                if (stage.actualCost > 0) {
-                    stageCostIter = stage.actualCost;
-                } else {
-                    // Генерируем случайное значение стоимости на основе бета-распределения
-                    double mean = (stage.costOptimistic + 4 * stage.cost + stage.costPessimistic) / 6.0;
-                    double stdDev = (stage.costPessimistic - stage.costOptimistic) / 6.0;
-                    stageCostIter = mean + stdDev * random.nextGaussian();
-                    stageCostIter = Math.max(stage.costOptimistic, Math.min(stageCostIter, stage.costPessimistic));
-                }
+                double stageCostIter = stage.actualCost > 0 ? stage.actualCost :
+                        ((stage.costOptimistic + 4 * stage.cost + stage.costPessimistic) / 6.0 +
+                                (stage.costPessimistic - stage.costOptimistic) / 6.0 * random.nextGaussian());
+                stageCostIter = Math.max(stage.costOptimistic, Math.min(stageCostIter, stage.costPessimistic));
                 totalCostIter += stageCostIter;
             }
 
             // Учитываем влияние рисков
             for (Risk risk : risks) {
-                // Решаем, сработал ли риск в этой итерации
                 boolean riskTriggered = random.nextDouble() < risk.probability;
-
                 if (riskTriggered) {
                     double riskTimeIter = (risk.impactTimeOptimistic + 4 * risk.impactTime + risk.impactTimePessimistic) / 6.0;
                     double riskCostIter = (risk.impactCostOptimistic + 4 * risk.impactCost + risk.impactCostPessimistic) / 6.0;
 
-                    // Генерируем случайное значение влияния риска
                     double riskTimeStdDev = (risk.impactTimePessimistic - risk.impactTimeOptimistic) / 6.0;
                     double riskCostStdDev = (risk.impactCostPessimistic - risk.impactCostOptimistic) / 6.0;
 
@@ -1078,15 +1067,31 @@ public class ServerManager {
                     riskTimeIter = Math.max(risk.impactTimeOptimistic, Math.min(riskTimeIter, risk.impactTimePessimistic));
                     riskCostIter = Math.max(risk.impactCostOptimistic, Math.min(riskCostIter, risk.impactCostPessimistic));
 
+                    // Логируем значения до смягчения
+                    System.out.println("Risk " + risk.name + " triggered: Initial Time Impact = " + riskTimeIter + 
+                                      ", Initial Cost Impact = " + riskCostIter);
+
                     // Применяем смягчение
                     if (risk.mitigated) {
                         if ("Mitigate".equals(risk.strategy)) {
                             riskTimeIter *= 0.5;
                             riskCostIter *= 0.5;
+                            System.out.println("Risk " + risk.name + " mitigated (Mitigate): Reduced Time Impact = " + riskTimeIter + 
+                                              ", Reduced Cost Impact = " + riskCostIter);
                         } else if ("Eliminate".equals(risk.strategy)) {
                             riskTimeIter = 5.0; // Фиксированное время на устранение
                             riskCostIter = 0.0;
+                            System.out.println("Risk " + risk.name + " mitigated (Eliminate): Fixed Time Impact = " + riskTimeIter + 
+                                              ", Cost Impact = " + riskCostIter);
                         }
+                    } else if (contingencyReserveUsed < contingencyReserve) {
+                        // Используем резерв, если риск сработал и не был смягчён
+                        double costToCover = Math.min(riskCostIter, contingencyReserve - contingencyReserveUsed);
+                        contingencyReserveUsed += costToCover;
+                        riskCostIter -= costToCover;
+                        logRiskAction(risk.name, "Покрыт резервом", "Использовано $" + costToCover + " из резерва");
+                        System.out.println("Risk " + risk.name + " covered by contingency reserve: $" + costToCover + 
+                                          ", Remaining Cost Impact = " + riskCostIter);
                     }
 
                     riskTimeImpactIter += riskTimeIter;
@@ -1095,31 +1100,28 @@ public class ServerManager {
             }
 
             totalTimeIter += riskTimeImpactIter;
-            totalCostIter += riskCostImpactIter + contingencyReserveUsed;
+            totalCostIter += riskCostImpactIter + (mitigationBudget - remainingMitigationBudget); // Учитываем затраты на управление
 
             timeResults.add(totalTimeIter);
             costResults.add(totalCostIter);
         }
 
-        // Рассчитываем средние значения
+        // Рассчитываем средние значения и остальные метрики
         totalTime = timeResults.stream().mapToDouble(Double::doubleValue).average().orElse(0.0);
         totalCost = costResults.stream().mapToDouble(Double::doubleValue).average().orElse(0.0);
 
-        // Рассчитываем стандартные отклонения
         double timeMean = totalTime;
         double costMean = totalCost;
         double timeVariance = timeResults.stream().mapToDouble(t -> Math.pow(t - timeMean, 2)).average().orElse(0.0);
-        double costVariance = costResults.stream().mapToDouble(c -> Math.pow(c - costMean, 2)).average().orElse(0.0);
+        double costVarianceCalc = costResults.stream().mapToDouble(c -> Math.pow(c - costMean, 2)).average().orElse(0.0); // Переименовано, чтобы не путать с полем costVariance
         timeStdDev = Math.sqrt(timeVariance);
-        costStdDev = Math.sqrt(costVariance);
+        costStdDev = Math.sqrt(costVarianceCalc);
 
-        // Рассчитываем доверительные интервалы (95%)
         timeConfidenceLower = totalTime - 1.96 * timeStdDev;
         timeConfidenceUpper = totalTime + 1.96 * timeStdDev;
         costConfidenceLower = totalCost - 1.96 * costStdDev;
         costConfidenceUpper = totalCost + 1.96 * costStdDev;
 
-        // Рассчитываем 90-й процентиль
         List<Double> sortedTimeResults = new ArrayList<>(timeResults);
         List<Double> sortedCostResults = new ArrayList<>(costResults);
         Collections.sort(sortedTimeResults);
@@ -1128,7 +1130,6 @@ public class ServerManager {
         time90thPercentile = sortedTimeResults.get(percentileIndex);
         cost90thPercentile = sortedCostResults.get(percentileIndex);
 
-        // Рассчитываем вероятности
         timeExceedProbability = timeResults.stream().filter(t -> t > timeThreshold).count() / (double) ITERATIONS;
         costExceedProbability = costResults.stream().filter(c -> c > costThreshold).count() / (double) ITERATIONS;
         timeTargetProbability = timeResults.stream().filter(t -> t <= targetTime).count() / (double) ITERATIONS;
@@ -1148,7 +1149,27 @@ public class ServerManager {
             }
         }
 
-        // Пересчитываем отклонения
+        // Определяем критические риски
+        Map<String, Double> riskTimeImpact = new HashMap<>();
+        Map<String, Double> riskCostImpact = new HashMap<>();
+        for (Risk risk : risks) {
+            double avgTimeImpact = timeResults.stream()
+                    .filter(t -> random.nextDouble() < risk.probability) // Упрощённая эвристика
+                    .mapToDouble(t -> risk.mitigated ? risk.impactTime * 0.5 : risk.impactTime)
+                    .average().orElse(0.0);
+            double avgCostImpact = costResults.stream()
+                    .filter(c -> random.nextDouble() < risk.probability) // Упрощённая эвристика
+                    .mapToDouble(c -> risk.mitigated ? risk.impactCost * 0.5 : risk.impactCost)
+                    .average().orElse(0.0);
+
+            if (avgTimeImpact > timeStdDev || avgCostImpact > costStdDev) {
+                criticalRisks.add(risk);
+                System.out.println("Risk " + risk.name + " marked as critical");
+            }
+            riskCostImpact.put(risk.name, avgCostImpact);
+        }
+
+        // Рассчитываем отклонения
         scheduleVariance = 0.0;
         costVariance = 0.0;
         for (Stage stage : stages) {
@@ -1156,24 +1177,26 @@ public class ServerManager {
             double expectedCost = (stage.costOptimistic + 4 * stage.cost + stage.costPessimistic) / 6.0;
 
             if (stage.actualDuration > 0) {
-                scheduleVariance += (stage.actualDuration - expectedDuration);
-            }
-            if (stage.actualCost > 0) {
-                costVariance += (stage.actualCost - expectedCost);
+                double durationDiff = stage.actualDuration - expectedDuration;
+                scheduleVariance += durationDiff;
+                System.out.println("Stage " + stage.name + ": Expected Duration = " + expectedDuration + 
+                                  ", Actual Duration = " + stage.actualDuration + 
+                                  ", Duration Diff = " + durationDiff);
             }
         }
 
+        // После симуляции рассчитываем costVariance как разницу между totalCost и baseCost
+        costVariance = totalCost - baseCost;
+
+        System.out.println("Final Schedule Variance: " + scheduleVariance);
+        System.out.println("Final Cost Variance: " + costVariance);
+        System.out.println("Final Remaining Mitigation Budget: " + remainingMitigationBudget);
+
         System.out.println("PERT simulation completed.");
-        System.out.println("Total Time (mean): " + totalTime +
-                ", Total Cost (mean): " + totalCost);
-        System.out.println("Time 90th Percentile: " + time90thPercentile +
-                ", Cost 90th Percentile: " + cost90thPercentile);
-        System.out.println("Time Exceed Probability: " + timeExceedProbability +
-                ", Cost Exceed Probability: " + costExceedProbability);
-        System.out.println("Time Target Probability: " + timeTargetProbability +
-                ", Cost Target Probability: " + costTargetProbability);
-        System.out.println("Schedule Variance: " + scheduleVariance +
-                ", Cost Variance: " + costVariance);
+        System.out.println("Total Time (mean): " + totalTime + ", Total Cost (mean): " + totalCost);
+        System.out.println("Mitigation Budget Used: " + (mitigationBudget - remainingMitigationBudget));
+        System.out.println("Remaining Mitigation Budget: " + remainingMitigationBudget);
+        System.out.println("Contingency Reserve Used: " + contingencyReserveUsed);
     }
 
     // Вспомогательный метод для расчета критического пути в каждой итерации
@@ -1404,19 +1427,21 @@ public class ServerManager {
 
             // Вставка рисков
             PreparedStatement riskStmt = localConnection.prepareStatement(
-                "INSERT INTO risks (name, probability, impact_time, impact_cost, mitigated, strategy, category, priority) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
-            );
-            for (Risk risk : risks) {
-                riskStmt.setString(1, risk.name);
-                riskStmt.setDouble(2, risk.probability);
-                riskStmt.setDouble(3, risk.impactTime);
-                riskStmt.setDouble(4, risk.impactCost);
-                riskStmt.setBoolean(5, risk.mitigated);
-                riskStmt.setString(6, risk.strategy);
-                riskStmt.setString(7, risk.category != null ? risk.category : "Не указано");
-                riskStmt.setDouble(8, risk.priority);
-                riskStmt.addBatch();
-            }
+            	    "INSERT INTO risks (name, probability, impact_time, impact_cost, mitigated, strategy, category, priority, mitigation_cost) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            	);
+            	for (Risk risk : risks) {
+            	    riskStmt.setString(1, risk.name);
+            	    riskStmt.setDouble(2, risk.probability);
+            	    riskStmt.setDouble(3, risk.impactTime);
+            	    riskStmt.setDouble(4, risk.impactCost);
+            	    riskStmt.setBoolean(5, risk.mitigated);
+            	    riskStmt.setString(6, risk.strategy);
+            	    riskStmt.setString(7, risk.category != null ? risk.category : "Не указано");
+            	    riskStmt.setDouble(8, risk.priority);
+            	    riskStmt.setDouble(9, risk.mitigationCost); // Добавляем mitigation_cost
+            	    riskStmt.addBatch();
+            	}
+            
             int[] riskResults = riskStmt.executeBatch();
             System.out.println("Добавлено рисков: " + Arrays.stream(riskResults).sum());
 

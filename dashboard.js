@@ -1,11 +1,20 @@
 import { fetchRiskLogs } from './api.js';
 
+// Явная регистрация плагина
+if (window.Chart && window.ChartDataLabels) {
+    window.Chart.register(window.ChartDataLabels);
+    console.log("ChartDataLabels успешно зарегистрирован");
+} else {
+    console.error("Chart или ChartDataLabels не найдены. Убедитесь, что скрипты подключены корректно.");
+}
+
 // Переменные для хранения объектов Chart
 let metricsChart = null;
 let costImpactChart = null;
 let timeImpactChart = null;
 let timeDistChart = null;
 let costDistChart = null;
+let mitigationPieChart = null; // Новый график
 
 export function createHistogramLabels(data, bins) {
     if (!data || data.length === 0) {
@@ -161,7 +170,9 @@ export function updateDashboard(metrics, risks, dashboardData) {
         <p>Ожидаемая стоимость проекта: $${metrics.total_cost ? metrics.total_cost.toFixed(0) : 'N/A'}</p>
         <p>Базовая стоимость (без учета рисков): $${metrics.base_cost ? metrics.base_cost.toFixed(0) : 'N/A'}</p>
         <p>Резерв на риски: $${metrics.contingency_reserve ? metrics.contingency_reserve.toFixed(0) : 'N/A'}</p>
-        <p>Использовано резерва: $${metrics.contingency_reserve_used ? metrics.contingency_reserve_used.toFixed(0) : 'N/A'}</p>
+        <p>Использовано резерва: $${metrics.contingency_reserve_used ? metrics.contingency_reserve_used.toFixed(0) : 'Нет'}</p>
+        <p>Бюджет на управление рисками: $${metrics.mitigation_budget ? metrics.mitigation_budget.toFixed(0) : 'N/A'}</p>
+        <p>Остаток бюджета на управление рисками: $${dashboardData?.remainingMitigationBudget ? dashboardData.remainingMitigationBudget.toFixed(0) : 'N/A'}</p>
         <p>Отклонение по времени: ${dashboardData?.scheduleVariance ? dashboardData.scheduleVariance.toFixed(1) : 'N/A'} дней</p>
         <p>Отклонение по стоимости: $${dashboardData?.costVariance ? dashboardData.costVariance.toFixed(0) : 'N/A'}</p>
         <p>Стандартное отклонение стоимости: $${dashboardData?.costStdDev ? dashboardData.costStdDev.toFixed(0) : 'N/A'}</p>
@@ -169,7 +180,6 @@ export function updateDashboard(metrics, risks, dashboardData) {
         <p>Вероятность уложиться в $${dashboardData?.targetCost ? dashboardData.targetCost.toFixed(0) : 'N/A'}: ${(dashboardData?.costTargetProbability * 100).toFixed(1)}%</p>
         <p>Вероятность превышения $${dashboardData?.costThreshold ? dashboardData.costThreshold.toFixed(0) : 'N/A'}: ${(dashboardData?.costExceedProbability * 100).toFixed(1)}%</p>
         <p>Стратегия управления: ${metrics.mitigation_strategy || 'N/A'}</p>
-        <p>Бюджет на управление: $${metrics.mitigation_budget ? metrics.mitigation_budget.toFixed(0) : 'N/A'}</p>
         <h4>Критические риски:</h4>
         <ul>
             ${dashboardData?.criticalRisks && dashboardData.criticalRisks.length > 0 ? dashboardData.criticalRisks.map(risk => `<li>${risk.name} (Приоритет: ${risk.priority.toFixed(2)})</li>`).join('') : '<li>Критические риски отсутствуют</li>'}
@@ -199,58 +209,133 @@ export function updateDashboard(metrics, risks, dashboardData) {
     }
     const metricsCtx = metricsCanvas.getContext('2d');
     console.log("Создание нового графика метрик");
+
+    const mitigationUsed = (metrics.mitigation_budget || 0) - (dashboardData?.remainingMitigationBudget || 0);
+
     metricsChart = new Chart(metricsCtx, {
         type: 'bar',
         data: {
-            labels: ['СТОИМОСТЬ', 'БАЗОВАЯ СТОИМОСТЬ', 'РЕЗЕРВ НА РИСКИ', 'ИСПОЛЬЗОВАНО РЕЗЕРВА'],
+            labels: [
+                'СТОИМОСТЬ',
+                'БАЗОВАЯ СТОИМОСТЬ',
+                'РЕЗЕРВ НА РИСКИ',
+                'ИСПОЛЬЗОВАНО РЕЗЕРВА',
+                'БЮДЖЕТ НА УПРАВЛЕНИЕ',
+                'ИСПОЛЬЗОВАНО УПРАВЛЕНИЯ'
+            ],
             datasets: [{
                 label: 'Метрики проекта',
                 data: [
                     metrics.total_cost || 0,
                     metrics.base_cost || 0,
                     metrics.contingency_reserve || 0,
-                    metrics.contingency_reserve_used || 0
+                    metrics.contingency_reserve_used || 0,
+                    metrics.mitigation_budget || 0,
+                    mitigationUsed
                 ],
-                backgroundColor: ['#FF6384', '#FFCE56', '#4BC0C0', '#9966FF']
+                backgroundColor: [
+                    '#FF6384', // total_cost
+                    '#FFCE56', // base_cost
+                    '#4BC0C0', // contingency_reserve
+                    '#9966FF', // contingency_reserve_used
+                    '#36A2EB', // mitigation_budget
+                    '#FF9F40'  // mitigation_used
+                ]
             }]
         },
         options: { 
             scales: { 
                 y: { 
                     beginAtZero: true,
-                    title: { 
-                        display: true, 
-                        text: 'ЗНАЧЕНИЕ ($)',
-                        font: {
-                            size: 10 // Уменьшаем шрифт для заголовка оси Y
-                        }
-                    },
-                    ticks: {
-                        font: {
-                            size: 8 // Уменьшаем шрифт для значений на оси Y
-                        }
-                    }
+                    title: { display: true, text: 'ЗНАЧЕНИЕ ($)', font: { size: 10 } },
+                    ticks: { font: { size: 8 } }
                 },
                 x: {
-                    title: {
-                        display: true,
-                        text: 'ВЛИЯНИЕ РИСКОВ',
-                        font: {
-                            size: 10 // Уменьшаем шрифт для заголовка оси X
-                        }
-                    },
-                    ticks: {
-                        font: {
-                            size: 8 // Уменьшаем шрифт для меток на оси X
-                        },
-                        maxRotation: 45, // Поворачиваем метки для компактности
-                        minRotation: 45
-                    }
+                    title: { display: true, font: { size: 10 } },
+                    ticks: { font: { size: 8 }, maxRotation: 45, minRotation: 45 }
                 }
             },
+            plugins: { 
+                legend: { display: false },
+                datalabels: { display: false } // Отключаем подписи
+            }
+        }
+    });
+
+    // Добавление круговой диаграммы распределения бюджета управления рисками
+    const mitigationPieCanvas = document.getElementById('mitigationPieChart');
+    if (!mitigationPieCanvas) {
+        console.error("Элемент <canvas> с ID 'mitigationPieChart' не найден");
+        return;
+    }
+    if (mitigationPieChart) {
+        console.log("Уничтожение старой круговой диаграммы");
+        mitigationPieChart.destroy();
+        mitigationPieChart = null;
+    }
+    const mitigationPieCtx = mitigationPieCanvas.getContext('2d');
+    console.log("Создание новой круговой диаграммы");
+
+    const mitigationData = risks
+        .filter(risk => risk.mitigationCost > 0)
+        .map(risk => ({
+            label: risk.name,
+            value: risk.mitigationCost
+        }));
+    const remainingBudget = dashboardData?.remainingMitigationBudget || 0;
+    if (remainingBudget > 0) {
+        mitigationData.push({ label: 'Неиспользованный бюджет', value: remainingBudget });
+    }
+
+    mitigationPieChart = new Chart(mitigationPieCtx, {
+        type: 'pie',
+        data: {
+            labels: mitigationData.map(d => d.label),
+            datasets: [{
+                data: mitigationData.map(d => d.value),
+                backgroundColor: [
+                    '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40',
+                    '#E7E9ED' // Цвет для неиспользованного бюджета
+                ].slice(0, mitigationData.length)
+            }]
+        },
+        options: {
+            responsive: true,
             plugins: {
                 legend: {
-                    display: false // Отключаем легенду
+                    display: false // Убираем легенду
+                },
+                title: {
+                    display: true,
+                    color: '#FFFFFF',
+                    font: { size: 14 }
+                },
+                datalabels: {
+                    color: '#DCDDDE', // Цвет подписей (светлый, чтобы соответствовать теме)
+                    formatter: (value, context) => {
+                        const label = context.chart.data.labels[context.dataIndex];
+                        return `${label}: $${value}`;
+                    },
+                    font: {
+                        size: 12
+                    },
+                    display: true,
+                    anchor: 'end', // Точка привязки подписи — конец сегмента (снаружи)
+                    align: 'end', // Выравнивание подписи — снаружи сегмента
+                    offset: 10, // Смещение подписи от края сегмента (в пикселях)
+                    textAlign: 'center',
+                    // Настройка соединительных линий
+                    labels: {
+                        value: {
+                            color: '#DCDDDE', // Цвет линии (светлый, чтобы соответствовать теме)
+                            // Добавляем линию
+                            line: {
+                                color: '#DCDDDE', // Цвет соединительной линии
+                                width: 1, // Толщина линии
+                                enabled: true // Включаем линию
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -320,7 +405,7 @@ export function updateDashboard(metrics, risks, dashboardData) {
                     grid: { display: false }
                 },
                 x: {
-                    title: { display: true, text: 'Риски' }
+                    title: { display: true }
                 }
             },
             plugins: {
@@ -345,7 +430,8 @@ export function updateDashboard(metrics, risks, dashboardData) {
                             return datasetLabel + ': ' + context.parsed.y;
                         }
                     }
-                }
+                },
+                datalabels: { display: false } // Отключаем подписи
             }
         }
     });
@@ -414,7 +500,7 @@ export function updateDashboard(metrics, risks, dashboardData) {
                     grid: { display: false }
                 },
                 x: {
-                    title: { display: true, text: 'Риски' }
+                    title: { display: true }
                 }
             },
             plugins: {
@@ -439,7 +525,8 @@ export function updateDashboard(metrics, risks, dashboardData) {
                             return datasetLabel + ': ' + context.parsed.y;
                         }
                     }
-                }
+                },
+                datalabels: { display: false } // Отключаем подписи
             }
         }
     });
@@ -480,6 +567,9 @@ export function updateDashboard(metrics, risks, dashboardData) {
                 scales: {
                     x: { title: { display: true, text: 'Время (дни)' } },
                     y: { title: { display: true, text: 'Частота' }, beginAtZero: true }
+                },
+                plugins: {
+                    datalabels: { display: false } // Отключаем подписи
                 }
             }
         });
@@ -542,6 +632,9 @@ export function updateDashboard(metrics, risks, dashboardData) {
                         title: { display: true, text: 'Частота' },
                         beginAtZero: true
                     }
+                },
+                plugins: {
+                    datalabels: { display: false } // Отключаем подписи
                 }
             }
         });
@@ -583,6 +676,9 @@ export function updateDashboard(metrics, risks, dashboardData) {
                 scales: {
                     x: { title: { display: true, text: 'Стоимость ($)' } },
                     y: { title: { display: true, text: 'Частота' }, beginAtZero: true }
+                },
+                plugins: {
+                    datalabels: { display: false } // Отключаем подписи
                 }
             }
         });
@@ -645,11 +741,15 @@ export function updateDashboard(metrics, risks, dashboardData) {
                         title: { display: true, text: 'Частота' },
                         beginAtZero: true
                     }
+                },
+                plugins: {
+                    datalabels: { display: false } // Отключаем подписи
                 }
             }
         });
     }
 
+    // Обновление таблицы рисков
     while (riskTable.rows.length > 1) riskTable.deleteRow(1);
     if (risks && Array.isArray(risks) && risks.length > 0) {
         risks.forEach(risk => {
@@ -661,15 +761,17 @@ export function updateDashboard(metrics, risks, dashboardData) {
             row.insertCell().textContent = risk.strategy || "Игнорировать (по умолчанию)";
             row.insertCell().textContent = risk.category || "Не указано";
             row.insertCell().textContent = risk.priority ? risk.priority.toFixed(2) : "N/A";
+            row.insertCell().textContent = risk.mitigationCost ? `$${risk.mitigationCost.toFixed(0)}` : "$0";
         });
     } else {
         console.warn("Риски не найдены или массив пуст:", risks);
         const row = riskTable.insertRow();
         const cell = row.insertCell();
-        cell.colSpan = 7;
+        cell.colSpan = 8;
         cell.textContent = "Риски отсутствуют";
     }
 
+    // Обновление рекомендаций
     const recommendations = generateRecommendations(metrics, risks || [], dashboardData);
     recDiv.innerHTML = `
         <h3>Рекомендации и прогнозы</h3>

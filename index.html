@@ -1,12 +1,15 @@
 <!DOCTYPE html>
 <html lang="ru">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Управление рисками IT-проектов</title>
-    <link rel="stylesheet" href="styles.css" id="css-link">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-</head>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Управление рисками IT-проектов</title>
+        <link rel="stylesheet" href="styles.css" id="css-link">
+        <!-- Подключение Chart.js -->
+        <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+        <!-- Подключение chartjs-plugin-datalabels -->
+        <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
+    </head>
 <body>
     <h1>Управление рисками IT-проектов</h1>
 
@@ -175,34 +178,40 @@
     <!-- Результаты и рекомендации -->
     <div class="section dashboard">
         <h2>Результаты и рекомендации</h2>
-        <div id="dashboardSummary"></div>
-        
+    <div id="dashboardSummary"></div>
+    
+    <div class="chart-row">
         <div class="chart-container chart-centered">
             <h4>Стоимость проекта</h4>
             <canvas id="metricsChart" width="600" height="200"></canvas>
         </div>
+        <div class="chart-container chart-centered">
+            <h4>Распределение бюджета управления</h4>
+            <canvas id="mitigationPieChart" width="400" height="200"></canvas>
+        </div>
+    </div>
 
-        <div class="chart-row">
-            <div class="chart-container">
-                <h4>Влияние рисков на стоимость</h4>
-                <canvas id="costImpactChart" width="500" height="300"></canvas>
-            </div>
-            <div class="chart-container">
-                <h4>Влияние рисков на время</h4>
-                <canvas id="timeImpactChart" width="500" height="300"></canvas>
-            </div>
+    <div class="chart-row">
+        <div class="chart-container">
+            <h4>Влияние рисков на стоимость</h4>
+            <canvas id="costImpactChart" width="500" height="300"></canvas>
         </div>
-        
-        <div class="chart-row">
-            <div class="chart-container">
-                <h4>Распределение стоимости</h4>
-                <canvas id="costDistributionChart" width="500" height="300"></canvas>
-            </div>
-            <div class="chart-container">
-                <h4>Распределение времени</h4>
-                <canvas id="timeDistributionChart" width="500" height="300"></canvas>
-            </div>
+        <div class="chart-container">
+            <h4>Влияние рисков на время</h4>
+            <canvas id="timeImpactChart" width="500" height="300"></canvas>
         </div>
+    </div>
+    
+    <div class="chart-row">
+        <div class="chart-container">
+            <h4>Распределение стоимости</h4>
+            <canvas id="costDistributionChart" width="500" height="300"></canvas>
+        </div>
+        <div class="chart-container">
+            <h4>Распределение времени</h4>
+            <canvas id="timeDistributionChart" width="500" height="300"></canvas>
+        </div>
+    </div>
         
         <table id="riskResultsTable">
             <thead>
@@ -214,6 +223,7 @@
                     <th>Стратегия</th>
                     <th>Категория</th>
                     <th>Приоритет</th>
+                    <th>Затраты на управление ($)</th> <!-- Новая колонка -->
                 </tr>
             </thead>
             <tbody></tbody>
@@ -238,7 +248,7 @@
         import { stages, addStage, removeStage, updateStagesTable } from './stages.js';
         import { updateProgress, fetchRiskLogs } from './api.js';
         import { updateRiskLogsTable } from './dashboard.js';
-
+    
         // Динамическое создание формы для обновления прогресса
         function updateProgressForm() {
             console.log("Вызов updateProgressForm, stages:", stages);
@@ -272,14 +282,17 @@
                 formDiv.appendChild(stageDiv);
             });
         }
-
+    
+        // Делаем updateProgressForm доступной глобально
+        window.updateProgressForm = updateProgressForm;
+    
         // Переопределяем updateStagesTable для вызова updateProgressForm
         const originalUpdateStagesTable = updateStagesTable;
         window.updateStagesTable = function() {
             originalUpdateStagesTable();
             updateProgressForm();
         };
-
+    
         // Инициализация формы и логов при загрузке
         document.addEventListener('DOMContentLoaded', async () => {
             updateProgressForm();
