@@ -88,26 +88,27 @@
             </div>
 
             <!-- Раздел 2: Обновление прогресса -->
-            <div id="progress" class="content-section">
-                <h2>Обновление прогресса</h2>
-                <!-- Таблица этапов -->
-                <table id="progressStagesTable">
-                    <thead>
-                        <tr>
-                            <th>Название</th>
-                            <th>Продолжительность (дни)</th>
-                            <th>Стоимость ($)</th>
-                            <th>Зависимости</th>
-                            <th>Фактическая длительность (дни)</th>
-                            <th>Фактическая стоимость ($)</th>
-                            <th>Удалить</th>
-                        </tr>
-                    </thead>
-                    <tbody></tbody>
-                </table>
-                <div id="progressUpdateForm"></div>
-                <button onclick="window.updateProgress()">Обновить прогресс</button>
-            </div>
+        <div id="progress" class="content-section">
+            <h2>Обновление прогресса</h2>
+            <div id="progressUpdateForm"></div>
+            <button onclick="window.updateProgress()">Обновить прогресс</button>
+            <h4> </h4>
+            <hr style="border-color: #7289DA; margin: 20px 0;">
+            <table id="progressStagesTable">
+                <thead>
+                    <tr>
+                        <th>Название</th>
+                        <th>Продолжительность (дни)</th>
+                        <th>Стоимость ($)</th>
+                        <th>Зависимости</th>
+                        <th>Фактическая длительность (дни)</th>
+                        <th>Фактическая стоимость ($)</th>
+                        <th>Удалить</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
 
             <!-- Раздел 3: Риски -->
             <div id="risks" class="content-section">
@@ -158,7 +159,7 @@
                             <option value="Внешние">Внешние</option>
                         </select>
                     </div>
-                    <button onclick="window.addTypicalRisksByCategory(document.getElementById('typicalRiskCategory').value)">Добавить риски категории</button>
+                    <button onclick="window.addTypicalRisksByCategory(document.getElementById('typicalRiskCategory').value)">Добавить категорию с рисками</button>
                 </div>
                 <table id="risksTable">
                     <thead>
@@ -214,10 +215,9 @@
                         </div>
                         <div class="input-group">
                             <label for="mitigationBudget">Бюджет ($):</label>
-                            <input type="number" id="mitigationBudget" value="10000" placeholder="Бюджет">
+                            <input type="number" id="mitigationBudget" value="5000" placeholder="Бюджет">
                         </div>
                         <button onclick="window.setMitigation()">Установить</button>
-                        <button onclick="window.runSimulation()">Пересчитать симуляцию</button>
                     </div>
                 </div>
             </div>
@@ -256,7 +256,11 @@
                         <canvas id="timeDistributionChart" width="500" height="300"></canvas>
                     </div>
                 </div>
+
+                <div id="recommendations"></div>
+
                 <table id="riskResultsTable">
+                    <h3>Таблица рисков</h3>
                     <thead>
                         <tr>
                             <th>Название</th>
@@ -271,7 +275,7 @@
                     </thead>
                     <tbody></tbody>
                 </table>
-                <div id="recommendations"></div>
+                <h3> </h3>
                 <div id="riskLogs">
                     <h3>Логи рисков</h3>
                     <table id="riskLogsTable">
@@ -334,19 +338,22 @@
 
         // Функция для обновления таблицы этапов в разделе "Обновление прогресса"
         function updateProgressStagesTable() {
-            const table = document.getElementById('progressStagesTable');
-            while (table.rows.length > 1) table.deleteRow(1);
-            stages.forEach((stage, index) => {
-                const row = table.insertRow();
-                row.insertCell().textContent = stage.name;
-                row.insertCell().textContent = stage.duration;
-                row.insertCell().textContent = stage.cost;
-                row.insertCell().textContent = stage.dependencies.join(', ');
-                row.insertCell().textContent = stage.actualDuration || 'N/A';
-                row.insertCell().textContent = stage.actualCost || 'N/A';
-                row.insertCell().innerHTML = `<button class="delete-btn" onclick="window.removeStage(${index})">✖</button>`;
-            });
-        }
+        const table = document.getElementById('progressStagesTable');
+        while (table.rows.length > 1) table.deleteRow(1);
+        stages.forEach((stage, index) => {
+            const row = table.insertRow();
+            row.insertCell().textContent = stage.name;
+            row.insertCell().textContent = stage.duration;
+            row.insertCell().textContent = stage.cost;
+            row.insertCell().textContent = stage.dependencies.join(', ');
+            row.insertCell().textContent = stage.actualDuration || 'N/A';
+            row.insertCell().textContent = stage.actualCost || 'N/A';
+            row.insertCell().innerHTML = `<button class="delete-btn" onclick="window.removeStage(${index})">✖</button>`;
+        });
+    }
+
+    // Делаем функцию глобально доступной
+    window.updateProgressStagesTable = updateProgressStagesTable;
 
         // Функция для показа всплывающих уведомлений
         function showToast(message, type = 'success') {
@@ -407,8 +414,7 @@
         const originalUpdateProgress = updateProgress;
         window.updateProgress = async function() {
             try {
-                await originalUpdateProgress();
-                updateProgressStagesTable(); // Обновляем таблицу после обновления прогресса
+                await originalUpdateProgress(); // Вызываем основную функцию, которая уже обновляет обе таблицы
                 showToast("Прогресс обновлён!", "success");
             } catch (error) {
                 showToast("Ошибка при обновлении прогресса", "error");
@@ -495,5 +501,5 @@
     <script type="module" src="simulation.js"></script>
     <script type="module" src="storage.js"></script>
     <script type="module" src="main.js"></script>
-</body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'926f4afb89e8c200',t:'MTc0MzA4Mjc1Ni4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>

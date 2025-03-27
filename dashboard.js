@@ -167,40 +167,56 @@ export function updateDashboard(metrics, risks, dashboardData) {
         return;
     }
 
+    // Группировка метрик по категориям
     summary.innerHTML = `
         <h3>Ключевые метрики</h3>
-        <p>Ожидаемое время проекта: ${metrics.total_time ? metrics.total_time.toFixed(1) : 'N/A'} дней</p>
-        <p>Стандартное отклонение времени: ${dashboardData?.timeStdDev ? dashboardData.timeStdDev.toFixed(1) : 'N/A'} дней</p>
-        <p>95% доверительный интервал времени: от ${dashboardData?.timeConfidenceLower ? dashboardData.timeConfidenceLower.toFixed(1) : 'N/A'} до ${dashboardData?.timeConfidenceUpper ? dashboardData.timeConfidenceUpper.toFixed(1) : 'N/A'} дней</p>
-        <p>Вероятность уложиться в ${dashboardData?.targetTime ? dashboardData.targetTime.toFixed(1) : 'N/A'} дней: ${(dashboardData?.timeTargetProbability * 100).toFixed(1)}%</p>
-        <p>Вероятность превышения ${dashboardData?.timeThreshold ? dashboardData.timeThreshold.toFixed(1) : 'N/A'} дней: ${(dashboardData?.timeExceedProbability * 100).toFixed(1)}%</p>
-        <p>Ожидаемая стоимость проекта: $${metrics.total_cost ? metrics.total_cost.toFixed(0) : 'N/A'}</p>
-        <p>Базовая стоимость (без учета рисков): $${metrics.base_cost ? metrics.base_cost.toFixed(0) : 'N/A'}</p>
-        <p>Резерв на риски: $${metrics.contingency_reserve ? metrics.contingency_reserve.toFixed(0) : 'N/A'}</p>
-        <p>Использовано резерва: $${metrics.contingency_reserve_used ? metrics.contingency_reserve_used.toFixed(0) : 'Нет'}</p>
-        <p>Бюджет на управление рисками: $${metrics.mitigation_budget ? metrics.mitigation_budget.toFixed(0) : 'N/A'}</p>
-        <p>Остаток бюджета на управление рисками: $${dashboardData?.remainingMitigationBudget ? dashboardData.remainingMitigationBudget.toFixed(0) : 'N/A'}</p>
-        <p>Отклонение по времени: ${dashboardData?.scheduleVariance ? dashboardData.scheduleVariance.toFixed(1) : 'N/A'} дней</p>
-        <p>Отклонение по стоимости: $${dashboardData?.costVariance ? dashboardData.costVariance.toFixed(0) : 'N/A'}</p>
-        <p>Стандартное отклонение стоимости: $${dashboardData?.costStdDev ? dashboardData.costStdDev.toFixed(0) : 'N/A'}</p>
-        <p>95% доверительный интервал стоимости: от $${dashboardData?.costConfidenceLower ? dashboardData.costConfidenceLower.toFixed(0) : 'N/A'} до $${dashboardData?.costConfidenceUpper ? dashboardData.costConfidenceUpper.toFixed(0) : 'N/A'}</p>
-        <p>Вероятность уложиться в $${dashboardData?.targetCost ? dashboardData.targetCost.toFixed(0) : 'N/A'}: ${(dashboardData?.costTargetProbability * 100).toFixed(1)}%</p>
-        <p>Вероятность превышения $${dashboardData?.costThreshold ? dashboardData.costThreshold.toFixed(0) : 'N/A'}: ${(dashboardData?.costExceedProbability * 100).toFixed(1)}%</p>
-        <p>Стратегия управления: ${metrics.mitigation_strategy || 'N/A'}</p>
-        <h4>Критические риски:</h4>
-        <ul>
-            ${dashboardData?.criticalRisks && dashboardData.criticalRisks.length > 0 ? dashboardData.criticalRisks.map(risk => `<li>${risk.name} (Приоритет: ${risk.priority.toFixed(2)})</li>`).join('') : '<li>Критические риски отсутствуют</li>'}
-        </ul>
-        <h4>Критические этапы:</h4>
-        <ul>
-            ${dashboardData?.criticalStages && dashboardData.criticalStages.length > 0 ? 
-                dashboardData.criticalStages.map(stage => {
-                    const displayDuration = stage.actualDuration > 0 ? stage.actualDuration : stage.duration;
-                    const displayCost = stage.actualCost > 0 ? stage.actualCost : stage.cost;
-                    return `<li>${stage.name} (Длительность: ${displayDuration}, Стоимость: $${displayCost})</li>`;
-                }).join('') : 
-                '<li>Критические этапы отсутствуют</li>'}
-        </ul>
+        <div class="metrics-section">
+            <h4>Время</h4>
+            <p>Ожидаемое время проекта: ${metrics.total_time ? metrics.total_time.toFixed(1) : 'N/A'} дней</p>
+            <p>Стандартное отклонение времени: ${dashboardData?.timeStdDev ? dashboardData.timeStdDev.toFixed(1) : 'N/A'} дней</p>
+            <p>95% доверительный интервал времени: от ${dashboardData?.timeConfidenceLower ? dashboardData.timeConfidenceLower.toFixed(1) : 'N/A'} до ${dashboardData?.timeConfidenceUpper ? dashboardData.timeConfidenceUpper.toFixed(1) : 'N/A'} дней</p>
+            <p>Вероятность уложиться в ${dashboardData?.targetTime ? dashboardData.targetTime.toFixed(1) : 'N/A'} дней: ${(dashboardData?.timeTargetProbability * 100).toFixed(1)}%</p>
+            <p>Вероятность превышения ${dashboardData?.timeThreshold ? dashboardData.timeThreshold.toFixed(1) : 'N/A'} дней: ${(dashboardData?.timeExceedProbability * 100).toFixed(1)}%</p>
+            <p>Отклонение по времени: ${dashboardData?.scheduleVariance ? dashboardData.scheduleVariance.toFixed(1) : 'N/A'} дней</p>
+        </div>
+        <hr style="border-color: #7289DA; margin: 20px 0;">
+        <div class="metrics-section">
+            <h4>Стоимость</h4>
+            <p>Ожидаемая стоимость проекта: $${metrics.total_cost ? metrics.total_cost.toFixed(0) : 'N/A'}</p>
+            <p>Базовая стоимость (без учета рисков): $${metrics.base_cost ? metrics.base_cost.toFixed(0) : 'N/A'}</p>
+            <p>Стандартное отклонение стоимости: $${dashboardData?.costStdDev ? dashboardData.costStdDev.toFixed(0) : 'N/A'}</p>
+            <p>95% доверительный интервал стоимости: от $${dashboardData?.costConfidenceLower ? dashboardData.costConfidenceLower.toFixed(0) : 'N/A'} до $${dashboardData?.costConfidenceUpper ? dashboardData.costConfidenceUpper.toFixed(0) : 'N/A'}</p>
+            <p>Вероятность уложиться в $${dashboardData?.targetCost ? dashboardData.targetCost.toFixed(0) : 'N/A'}: ${(dashboardData?.costTargetProbability * 100).toFixed(1)}%</p>
+            <p>Вероятность превышения $${dashboardData?.costThreshold ? dashboardData.costThreshold.toFixed(0) : 'N/A'}: ${(dashboardData?.costExceedProbability * 100).toFixed(1)}%</p>
+            <p>Отклонение по стоимости: $${dashboardData?.costVariance ? dashboardData.costVariance.toFixed(0) : 'N/A'}</p>
+        </div>
+        <hr style="border-color: #7289DA; margin: 20px 0;">
+        <div class="metrics-section">
+            <h4>Управление рисками</h4>
+            <p>Резерв на риски: $${metrics.contingency_reserve ? metrics.contingency_reserve.toFixed(0) : 'N/A'}</p>
+            <p>Использовано резерва: $${metrics.contingency_reserve_used ? metrics.contingency_reserve_used.toFixed(0) : 'Нет'}</p>
+            <p>Бюджет на управление рисками: $${metrics.mitigation_budget ? metrics.mitigation_budget.toFixed(0) : 'N/A'}</p>
+            <p>Остаток бюджета на управление рисками: $${dashboardData?.remainingMitigationBudget ? dashboardData.remainingMitigationBudget.toFixed(0) : 'N/A'}</p>
+            <p>Стратегия управления: ${metrics.mitigation_strategy || 'N/A'}</p>
+        </div>
+        <hr style="border-color: #7289DA; margin: 20px 0;">
+        <div class="metrics-section">
+            <h4>Критические риски и этапы</h4>
+            <h5>Критические риски:</h5>
+            <ul>
+                ${dashboardData?.criticalRisks && dashboardData.criticalRisks.length > 0 ? dashboardData.criticalRisks.map(risk => `<li>${risk.name} (Приоритет: ${risk.priority.toFixed(2)})</li>`).join('') : '<li>Критические риски отсутствуют</li>'}
+            </ul>
+            <h5>Критические этапы:</h5>
+            <ul>
+                ${dashboardData?.criticalStages && dashboardData.criticalStages.length > 0 ? 
+                    dashboardData.criticalStages.map(stage => {
+                        const displayDuration = stage.actualDuration > 0 ? stage.actualDuration : stage.duration;
+                        const displayCost = stage.actualCost > 0 ? stage.actualCost : stage.cost;
+                        return `<li>${stage.name} (Длительность: ${displayDuration}, Стоимость: $${displayCost})</li>`;
+                    }).join('') : 
+                    '<li>Критические этапы отсутствуют</li>'}
+            </ul>
+        </div>
     `;
 
     // Проверка и обновление графика метрик
@@ -254,12 +270,12 @@ export function updateDashboard(metrics, risks, dashboardData) {
             scales: { 
                 y: { 
                     beginAtZero: true,
-                    title: { display: true, text: 'ЗНАЧЕНИЕ ($)', font: { size: 10 } },
-                    ticks: { font: { size: 8 } }
+                    title: { display: true, text: ' ', font: { size: 10 }, color: '#FFFFFF' },
+                    ticks: { font: { size: 8 }, color: '#FFFFFF' }
                 },
                 x: {
-                    title: { display: true, font: { size: 10 } },
-                    ticks: { font: { size: 8 }, maxRotation: 45, minRotation: 45 }
+                    title: { display: true, font: { size: 10 }, color: '#FFFFFF' },
+                    ticks: { font: { size: 8 }, color: '#FFFFFF', maxRotation: 45, minRotation: 45 }
                 }
             },
             plugins: { 
@@ -318,28 +334,45 @@ export function updateDashboard(metrics, risks, dashboardData) {
                     font: { size: 14 }
                 },
                 datalabels: {
-                    color: '#DCDDDE', // Цвет подписей (светлый, чтобы соответствовать теме)
+                    color: '#FFFFFF', // Белый цвет подписей
                     formatter: (value, context) => {
                         const label = context.chart.data.labels[context.dataIndex];
-                        return `${label}: $${value}`;
+                        // Перенос текста, если он длинный
+                        const maxLength = 10; // Максимальная длина строки
+                        let formattedLabel = label;
+                        if (label.length > maxLength) {
+                            const words = label.split(' ');
+                            let currentLine = '';
+                            const lines = [];
+                            for (const word of words) {
+                                if ((currentLine + word).length > maxLength) {
+                                    lines.push(currentLine.trim());
+                                    currentLine = word + ' ';
+                                } else {
+                                    currentLine += word + ' ';
+                                }
+                            }
+                            if (currentLine) lines.push(currentLine.trim());
+                            formattedLabel = lines.join('\n');
+                        }
+                        return `${formattedLabel}: $${value}`;
                     },
                     font: {
-                        size: 12
+                        size: 10 // Уменьшаем размер шрифта
                     },
                     display: true,
                     anchor: 'end', // Точка привязки подписи — конец сегмента (снаружи)
                     align: 'end', // Выравнивание подписи — снаружи сегмента
-                    offset: 10, // Смещение подписи от края сегмента (в пикселях)
+                    offset: 5, // Увеличиваем смещение подписи от края сегмента
                     textAlign: 'center',
                     // Настройка соединительных линий
                     labels: {
                         value: {
-                            color: '#DCDDDE', // Цвет линии (светлый, чтобы соответствовать теме)
-                            // Добавляем линию
+                            color: '#FFFFFF', // Белый цвет линии
                             line: {
-                                color: '#DCDDDE', // Цвет соединительной линии
-                                width: 1, // Толщина линии
-                                enabled: true // Включаем линию
+                                color: '#FFFFFF', // Белый цвет соединительной линии
+                                width: 1,
+                                enabled: true
                             }
                         }
                     }
@@ -401,18 +434,21 @@ export function updateDashboard(metrics, risks, dashboardData) {
                 'y-cost': {
                     position: 'left',
                     beginAtZero: true,
-                    title: { display: true, text: 'Влияние на стоимость ($)' },
+                    title: { display: true, text: 'Влияние на стоимость ($)', color: '#FFFFFF' },
+                    ticks: { color: '#FFFFFF' },
                     max: costMaxImpact * 1.2
                 },
                 'y-probability': {
                     position: 'right',
                     beginAtZero: true,
                     max: 100,
-                    title: { display: true, text: 'Вероятность (%)' },
+                    title: { display: true, text: 'Вероятность (%)', color: '#FFFFFF' },
+                    ticks: { color: '#FFFFFF' },
                     grid: { display: false }
                 },
                 x: {
-                    title: { display: true }
+                    title: { display: true, color: '#FFFFFF' },
+                    ticks: { color: '#FFFFFF' }
                 }
             },
             plugins: {
@@ -496,18 +532,21 @@ export function updateDashboard(metrics, risks, dashboardData) {
                 'y-time': {
                     position: 'left',
                     beginAtZero: true,
-                    title: { display: true, text: 'Влияние на время (дни)' },
+                    title: { display: true, text: 'Влияние на время (дни)', color: '#FFFFFF' },
+                    ticks: { color: '#FFFFFF' },
                     max: timeMaxImpact * 1.2
                 },
                 'y-probability': {
                     position: 'right',
                     beginAtZero: true,
                     max: 100,
-                    title: { display: true, text: 'Вероятность (%)' },
+                    title: { display: true, text: 'Вероятность (%)', color: '#FFFFFF' },
+                    ticks: { color: '#FFFFFF' },
                     grid: { display: false }
                 },
                 x: {
-                    title: { display: true }
+                    title: { display: true, color: '#FFFFFF' },
+                    ticks: { color: '#FFFFFF' }
                 }
             },
             plugins: {
@@ -572,8 +611,8 @@ export function updateDashboard(metrics, risks, dashboardData) {
             },
             options: {
                 scales: {
-                    x: { title: { display: true, text: 'Время (дни)' } },
-                    y: { title: { display: true, text: 'Частота' }, beginAtZero: true }
+                    x: { title: { display: true, text: 'Время (дни)', color: '#FFFFFF' }, ticks: { color: '#FFFFFF' } },
+                    y: { title: { display: true, text: 'Частота', color: '#FFFFFF' }, ticks: { color: '#FFFFFF' }, beginAtZero: true }
                 },
                 plugins: {
                     datalabels: { display: false } // Отключаем подписи
@@ -631,12 +670,14 @@ export function updateDashboard(metrics, risks, dashboardData) {
                 scales: {
                     x: {
                         type: 'linear',
-                        title: { display: true, text: 'Время (дни)' },
+                        title: { display: true, text: 'Время (дни)', color: '#FFFFFF' },
+                        ticks: { color: '#FFFFFF' },
                         min: Math.min(...timeResults, Number(dashboardData?.timeConfidenceLower) || 0),
                         max: Math.max(...timeResults, Number(dashboardData?.timeConfidenceUpper) || 0)
                     },
                     y: {
-                        title: { display: true, text: 'Частота' },
+                        title: { display: true, text: 'Частота', color: '#FFFFFF' },
+                        ticks: { color: '#FFFFFF' },
                         beginAtZero: true
                     }
                 },
@@ -681,8 +722,8 @@ export function updateDashboard(metrics, risks, dashboardData) {
             },
             options: {
                 scales: {
-                    x: { title: { display: true, text: 'Стоимость ($)' } },
-                    y: { title: { display: true, text: 'Частота' }, beginAtZero: true }
+                    x: { title: { display: true, text: 'Стоимость ($)', color: '#FFFFFF' }, ticks: { color: '#FFFFFF' } },
+                    y: { title: { display: true, text: 'Частота', color: '#FFFFFF' }, ticks: { color: '#FFFFFF' }, beginAtZero: true }
                 },
                 plugins: {
                     datalabels: { display: false } // Отключаем подписи
@@ -740,12 +781,14 @@ export function updateDashboard(metrics, risks, dashboardData) {
                 scales: {
                     x: {
                         type: 'linear',
-                        title: { display: true, text: 'Стоимость ($)' },
+                        title: { display: true, text: 'Стоимость ($)', color: '#FFFFFF' },
+                        ticks: { color: '#FFFFFF' },
                         min: Math.min(...costResults, Number(dashboardData?.costConfidenceLower) || 0),
                         max: Math.max(...costResults, Number(dashboardData?.costConfidenceUpper) || 0)
                     },
                     y: {
-                        title: { display: true, text: 'Частота' },
+                        title: { display: true, text: 'Частота', color: '#FFFFFF' },
+                        ticks: { color: '#FFFFFF' },
                         beginAtZero: true
                     }
                 },

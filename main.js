@@ -2,7 +2,7 @@ import { fetchDashboardData, createModel, updateProgress, fetchRiskLogs } from '
 import { updateDashboard, updateRiskLogsTable } from './dashboard.js';
 import { addStage, removeStage, stages } from './stages.js';
 import { addCustomRisk, addTypicalRisksByCategory, removeRisk, risks } from './risks.js';
-import { runSimulation, setMitigation } from './simulation.js';
+import { setMitigation } from './simulation.js';
 import { loadData } from './storage.js';
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -17,16 +17,14 @@ document.addEventListener('DOMContentLoaded', () => {
             if (data) updateDashboard(data.metrics, data.risks, data.dashboardData);
             const logs = await fetchRiskLogs();
             updateRiskLogsTable(logs);
+            // Переключаемся на вкладку "Результаты"
+            const resultsNavItem = document.querySelector('.nav-item[data-section="results"]');
+            if (resultsNavItem) {
+                resultsNavItem.click(); // Симулируем клик по вкладке "Результаты"
+            }
         }
     };
     window.setMitigation = setMitigation;
-    window.runSimulation = async () => {
-        await runSimulation();
-        const data = await fetchDashboardData();
-        if (data) updateDashboard(data.metrics, data.risks, data.dashboardData);
-        const logs = await fetchRiskLogs();
-        updateRiskLogsTable(logs);
-    };
     window.loadData = loadData;
     window.removeRisk = removeRisk;
     window.removeStage = removeStage;
@@ -34,24 +32,24 @@ document.addEventListener('DOMContentLoaded', () => {
         const stageUpdates = stages.map(stage => {
             const actualDurationInput = document.getElementById(`actualDuration_${stage.safeName}`);
             const actualCostInput = document.getElementById(`actualCost_${stage.safeName}`);
-
+    
             if (!actualDurationInput || !actualCostInput) {
                 console.error(`Не найдены поля ввода для этапа ${stage.name}`);
                 return null;
             }
-
+    
             return {
                 name: stage.name,
                 actualDuration: parseFloat(actualDurationInput.value) || 0,
                 actualCost: parseFloat(actualCostInput.value) || 0
             };
         }).filter(update => update !== null);
-
+    
         if (stageUpdates.length === 0) {
             alert("Нет этапов для обновления или поля ввода не найдены.");
             return;
         }
-
+    
         const success = await updateProgress(stageUpdates);
         if (success) {
             stageUpdates.forEach(update => {
@@ -61,7 +59,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     stage.actualCost = update.actualCost;
                 }
             });
-            window.updateStagesTable();
+            // Обновляем обе таблицы
+            window.updateStagesTable();         // Таблица в первом разделе
+            window.updateProgressStagesTable(); // Таблица во втором разделе
             // Запрашиваем обновленные данные с сервера
             const data = await fetchDashboardData();
             if (data) updateDashboard(data.metrics, data.risks, data.dashboardData);
