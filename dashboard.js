@@ -123,10 +123,12 @@ export function generateRecommendations(metrics, risks, dashboardData) {
         const names = highImpactRisks.map(r => r.name).join(', ');
         recs.push(`Риски с высоким потенциальным воздействием (${names}) могут значительно повлиять на проект. Приоритетно разработайте меры управления.`);
     }
-    if (dashboardData?.criticalStages?.length > 0) {
-        const criticalStageNames = dashboardData.criticalStages.map(s => s.name).join(', ');
-        recs.push(`Критические этапы (${criticalStageNames}) вносят значительную неопределённость. Оптимизируйте их выполнение.`);
+
+    // Добавляем подробные рекомендации по критическим этапам
+    if (dashboardData?.criticalStageRecommendations && dashboardData.criticalStageRecommendations.length > 0) {
+        recs.push(...dashboardData.criticalStageRecommendations);
     }
+
     if (dashboardData?.remainingMitigationBudget > 0 && dashboardData?.costConfidenceUpper > dashboardData?.targetCost) {
         recs.push(`Верхняя граница стоимости ($${dashboardData.costConfidenceUpper.toFixed(0)}) превышает целевой бюджет ($${dashboardData.targetCost.toFixed(0)}). Используйте остаток бюджета на управление рисками ($${dashboardData.remainingMitigationBudget.toFixed(0)}) для смягчения ключевых рисков.`);
     }
