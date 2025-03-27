@@ -1,12 +1,171 @@
 /* Подключение шрифта Roboto */
 @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap');
 
+* {
+    box-sizing: border-box;
+}
+
 body {
     font-family: 'Roboto', sans-serif;
     background-color: #2F3136;
     color: #DCDDDE;
     margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Фиксированный заголовок */
+.header {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    background-color: #36393F;
+    padding: 15px 20px;
+    border-bottom: 1px solid #202225;
+    z-index: 1000;
+    text-align: left; /* Заголовок слева */
+}
+
+.header h1 {
+    font-size: 24px;
+    color: #FFFFFF;
+    margin: 0;
+}
+
+.container {
+    display: grid;
+    grid-template-columns: 250px 1fr; /* Фиксированная ширина боковой панели, остальное для контента */
+    width: 100%;
+    min-height: 100vh;
+    margin-top: 60px; /* Отступ для фиксированного заголовка */
+}
+
+/* Боковая панель */
+.sidebar {
+    grid-column: 1 / 2;
+    background-color: #36393F;
     padding: 20px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    border-right: 1px solid #202225;
+    position: sticky;
+    top: 60px; /* Учитываем высоту заголовка */
+    height: calc(100vh - 60px); /* Высота с учетом заголовка */
+    overflow-y: auto;
+}
+
+.nav-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    margin-bottom: auto; /* Навигация прижимается к верху */
+}
+
+.nav-item {
+    display: flex;
+    align-items: center;
+    padding: 10px 0;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.nav-item:hover {
+    background-color: #40444B;
+}
+
+.nav-circle {
+    width: 30px;
+    height: 30px;
+    border: 2px solid #7289DA;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 10px;
+    font-size: 14px;
+    color: #DCDDDE;
+}
+
+.nav-item.active .nav-circle {
+    border-width: 4px;
+    background-color: #7289DA;
+    color: #FFFFFF;
+}
+
+.nav-text {
+    font-size: 16px;
+    color: #DCDDDE;
+}
+
+.nav-item.active .nav-text {
+    color: #FFFFFF;
+    font-weight: 700;
+}
+
+.sidebar-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.sidebar-buttons button {
+    background-color: #7289DA;
+    color: #FFFFFF;
+    border: none;
+    padding: 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: background-color 0.2s, transform 0.1s;
+}
+
+.sidebar-buttons button:hover {
+    background-color: #677BC4;
+    transform: translateY(-1px);
+}
+
+.sidebar-buttons button:active {
+    background-color: #5B6EAE;
+    transform: translateY(1px);
+}
+
+/* Основной контент */
+.main-content {
+    grid-column: 2 / 3;
+    padding: 20px;
+    overflow-y: auto;
+    position: relative; /* Контейнер для позиционирования секций */
+}
+
+.content-section {
+    position: absolute; /* Все секции перекрываются */
+    top: 0;
+    left: 0;
+    width: 100%;
+    opacity: 0;
+    transform: translateX(20px);
+    transition: opacity 0.3s ease, transform 0.3s ease;
+    display: none; /* По умолчанию скрыты */
+}
+
+.content-section.active {
+    position: relative; /* Активная секция становится видимой */
+    display: block; /* Показываем активную секцию */
+    opacity: 1;
+    transform: translateX(0);
+}
+
+.content-section.slide-out {
+    opacity: 0;
+    transform: translateX(-20px);
+}
+
+.content-section.slide-in {
+    opacity: 1;
+    transform: translateX(0);
 }
 
 .section {
@@ -216,7 +375,7 @@ h4 {
 .chart-container {
     flex: 1;
     min-width: 300px;
-    max-width: 700px; /* Увеличиваем максимальную ширину для первого ряда */
+    max-width: 700px;
     margin: 10px;
     text-align: center;
 }
@@ -229,16 +388,16 @@ h4 {
 
 /* Фиксированные размеры для графика стоимости */
 #metricsChart {
-    width: 700px !important; /* Увеличено для большего пространства */
-    height: 250px !important; /* Увеличено для лучшей читаемости */
+    width: 700px !important;
+    height: 250px !important;
     max-width: 700px !important;
     max-height: 250px !important;
 }
 
 /* Размеры для круговой диаграммы */
 #mitigationPieChart {
-    width: 500px !important; /* Увеличено для размещения подписей */
-    height: 300px !important; /* Увеличено для лучшей читаемости */
+    width: 500px !important;
+    height: 300px !important;
     max-width: 500px !important;
     max-height: 300px !important;
 }
@@ -254,35 +413,117 @@ h4 {
     max-height: 300px !important;
 }
 
+/* Стили для всплывающих уведомлений */
+#toast-container {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.toast {
+    background-color: #36393F;
+    color: #DCDDDE;
+    padding: 10px 20px;
+    border-radius: 4px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    opacity: 1;
+    transition: opacity 0.3s ease;
+}
+
+.toast.success {
+    border: 2px solid #4CAF50;
+}
+
+.toast.error {
+    border: 2px solid #FF5555;
+}
+
+.toast.fade-out {
+    opacity: 0;
+}
+
 @media (max-width: 768px) {
+    .container {
+        grid-template-columns: 1fr; /* На мобильных устройствах убираем боковую панель в отдельный ряд */
+        grid-template-rows: auto 1fr;
+    }
+
+    .header {
+        padding: 10px;
+    }
+
+    .header h1 {
+        font-size: 20px;
+    }
+
+    .sidebar {
+        grid-column: 1 / 2;
+        grid-row: 1 / 2;
+        position: static;
+        border-right: none;
+        border-bottom: 1px solid #202225;
+        height: auto;
+    }
+
+    .main-content {
+        grid-column: 1 / 2;
+        grid-row: 2 / 3;
+    }
+
+    .nav-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+
+    .nav-item {
+        flex: 1;
+        min-width: 150px;
+    }
+
+    .sidebar-buttons {
+        flex-direction: row;
+        justify-content: space-between;
+    }
+
     .input-row, .action-buttons {
         flex-direction: column;
     }
+
     .panel, .action-buttons button {
         width: 100%;
     }
+
     table {
         font-size: 12px;
     }
+
     .chart-row {
         flex-direction: column;
         align-items: center;
     }
+
     .chart-container {
         margin: 10px 0;
-        max-width: 450px; /* Уменьшаем максимальную ширину для адаптивности */
+        max-width: 450px;
     }
-    /* Адаптивные размеры графиков */
+
     #metricsChart {
         width: 100% !important;
-        max-width: 450px !important; /* Увеличено для адаптивности */
-        height: 200px !important; /* Увеличено для лучшей читаемости */
+        max-width: 450px !important;
+        height: 200px !important;
     }
+
     #mitigationPieChart {
         width: 100% !important;
-        max-width: 350px !important; /* Увеличено для размещения подписей */
-        height: 250px !important; /* Увеличено для лучшей читаемости */
+        max-width: 350px !important;
+        height: 250px !important;
     }
+
     #costImpactChart,
     #timeImpactChart,
     #costDistributionChart,
@@ -290,5 +531,32 @@ h4 {
         width: 100% !important;
         max-width: 350px !important;
         height: 200px !important;
+    }
+
+    #toast-container {
+        bottom: 10px;
+        right: 10px;
+    }
+
+    .toast {
+        font-size: 14px;
+        padding: 8px 16px;
+    }
+
+    /* Анимация для мобильных устройств (вертикальная) */
+    .content-section {
+        transform: translateY(20px); /* Смещение вниз вместо вправо */
+    }
+
+    .content-section.active {
+        transform: translateY(0);
+    }
+
+    .content-section.slide-out {
+        transform: translateY(-20px); /* Уход вверх */
+    }
+
+    .content-section.slide-in {
+        transform: translateY(0);
     }
 }

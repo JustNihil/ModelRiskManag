@@ -1,254 +1,303 @@
 <!DOCTYPE html>
 <html lang="ru">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Управление рисками IT-проектов</title>
-        <link rel="stylesheet" href="styles.css" id="css-link">
-        <!-- Подключение Chart.js -->
-        <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
-        <!-- Подключение chartjs-plugin-datalabels -->
-        <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
-    </head>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Управление рисками IT-проектов</title>
+    <link rel="stylesheet" href="styles.css" id="css-link">
+    <!-- Подключение Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+    <!-- Подключение chartjs-plugin-datalabels -->
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
+</head>
 <body>
-    <h1>Управление рисками IT-проектов</h1>
+    <!-- Фиксированный заголовок -->
+    <header class="header">
+        <h1>Управление рисками в IT-проектах</h1>
+    </header>
 
-    <!-- Добавление этапов -->
-    <div class="section">
-        <h2>Этапы проекта</h2>
-        <div class="input-row">
-            <div class="input-group">
-                <label for="stageName">Название этапа</label>
-                <input type="text" id="stageName" placeholder="Название">
+    <div class="container">
+        <!-- Боковая панель навигации -->
+        <div class="sidebar">
+            <ul class="nav-list">
+                <li class="nav-item active" data-section="stages">
+                    <span class="nav-circle">1</span>
+                    <span class="nav-text">Этапы проекта</span>
+                </li>
+                <li class="nav-item" data-section="progress">
+                    <span class="nav-circle">2</span>
+                    <span class="nav-text">Обновление прогресса</span>
+                </li>
+                <li class="nav-item" data-section="risks">
+                    <span class="nav-circle">3</span>
+                    <span class="nav-text">Риски</span>
+                </li>
+                <li class="nav-item" data-section="settings-strategy">
+                    <span class="nav-circle">4</span>
+                    <span class="nav-text">Настройки и стратегия</span>
+                </li>
+                <li class="nav-item" data-section="results">
+                    <span class="nav-circle">5</span>
+                    <span class="nav-text">Результаты</span>
+                </li>
+            </ul>
+            <div class="sidebar-buttons">
+                <button onclick="window.loadData()">Загрузить данные</button>
+                <button onclick="window.createModel()">Создать модель</button>
             </div>
-            <div class="input-group">
-                <label for="stageDuration">Продолжительность (дни)</label>
-                <input type="number" id="stageDuration" placeholder="Продолжительность">
-            </div>
-            <div class="input-group">
-                <label for="stageCost">Стоимость ($)</label>
-                <input type="number" id="stageCost" placeholder="Стоимость">
-            </div>
-            <div class="input-group">
-                <label for="stageDependencies">Зависимости (имена этапов через запятую)</label>
-                <input type="text" id="stageDependencies" placeholder="Этап1, Этап2">
-            </div>
-            <button onclick="window.addStage()">Добавить этап</button>
         </div>
-        <table id="stagesTable">
-            <thead>
-                <tr>
-                    <th>Название</th>
-                    <th>Продолжительность (дни)</th>
-                    <th>Стоимость ($)</th>
-                    <th>Зависимости</th>
-                    <th>Фактическая длительность (дни)</th>
-                    <th>Фактическая стоимость ($)</th>
-                    <th>Удалить</th>
-                </tr>
-            </thead>
-            <tbody></tbody>
-        </table>
+
+        <!-- Основной контент -->
+        <div class="main-content">
+            <!-- Раздел 1: Этапы проекта -->
+            <div id="stages" class="content-section active">
+                <h2>Этапы проекта</h2>
+                <div class="input-row">
+                    <div class="input-group">
+                        <label for="stageName">Название этапа</label>
+                        <input type="text" id="stageName" placeholder="Название">
+                    </div>
+                    <div class="input-group">
+                        <label for="stageDuration">Продолжительность (дни)</label>
+                        <input type="number" id="stageDuration" placeholder="Продолжительность">
+                    </div>
+                    <div class="input-group">
+                        <label for="stageCost">Стоимость ($)</label>
+                        <input type="number" id="stageCost" placeholder="Стоимость">
+                    </div>
+                    <div class="input-group">
+                        <label for="stageDependencies">Зависимости (имена этапов через запятую)</label>
+                        <input type="text" id="stageDependencies" placeholder="Этап1, Этап2">
+                    </div>
+                    <button onclick="window.addStage()">Добавить этап</button>
+                </div>
+                <table id="stagesTable">
+                    <thead>
+                        <tr>
+                            <th>Название</th>
+                            <th>Продолжительность (дни)</th>
+                            <th>Стоимость ($)</th>
+                            <th>Зависимости</th>
+                            <th>Фактическая длительность (дни)</th>
+                            <th>Фактическая стоимость ($)</th>
+                            <th>Удалить</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+
+            <!-- Раздел 2: Обновление прогресса -->
+            <div id="progress" class="content-section">
+                <h2>Обновление прогресса</h2>
+                <!-- Таблица этапов -->
+                <table id="progressStagesTable">
+                    <thead>
+                        <tr>
+                            <th>Название</th>
+                            <th>Продолжительность (дни)</th>
+                            <th>Стоимость ($)</th>
+                            <th>Зависимости</th>
+                            <th>Фактическая длительность (дни)</th>
+                            <th>Фактическая стоимость ($)</th>
+                            <th>Удалить</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+                <div id="progressUpdateForm"></div>
+                <button onclick="window.updateProgress()">Обновить прогресс</button>
+            </div>
+
+            <!-- Раздел 3: Риски -->
+            <div id="risks" class="content-section">
+                <h2>Риски</h2>
+                <div class="input-row">
+                    <div class="input-group">
+                        <label for="riskName">Название риска</label>
+                        <input type="text" id="riskName" placeholder="Название">
+                    </div>
+                    <div class="input-group">
+                        <label for="riskProb">Вероятность (0-1)</label>
+                        <input type="number" id="riskProb" step="0.1" min="0" max="1" placeholder="Вероятность">
+                    </div>
+                    <div class="input-group">
+                        <label for="riskTime">Влияние на время (дни)</label>
+                        <input type="number" id="riskTime" min="0" placeholder="Влияние на время">
+                    </div>
+                    <div class="input-group">
+                        <label for="riskCost">Влияние на стоимость ($)</label>
+                        <input type="number" id="riskCost" min="0" placeholder="Влияние на стоимость">
+                    </div>
+                    <div class="input-group">
+                        <label for="riskStrategy">Стратегия</label>
+                        <select id="riskStrategy">
+                            <option value="Ignore">Игнорировать</option>
+                            <option value="Mitigate">Снизить</option>
+                            <option value="Eliminate">Устранить</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label for="riskCategory">Категория</label>
+                        <select id="riskCategory">
+                            <option value="Технические">Технические</option>
+                            <option value="Организационные">Организационные</option>
+                            <option value="Внешние">Внешние</option>
+                            <option value="Не указано">Не указано</option>
+                        </select>
+                    </div>
+                    <button onclick="window.addCustomRisk()">Добавить риск</button>
+                </div>
+                <div class="input-row">
+                    <div class="input-group">
+                        <label for="typicalRiskCategory">Типичные риски</label>
+                        <select id="typicalRiskCategory">
+                            <option value="">Выберите категорию</option>
+                            <option value="Технические">Технические</option>
+                            <option value="Организационные">Организационные</option>
+                            <option value="Внешние">Внешние</option>
+                        </select>
+                    </div>
+                    <button onclick="window.addTypicalRisksByCategory(document.getElementById('typicalRiskCategory').value)">Добавить риски категории</button>
+                </div>
+                <table id="risksTable">
+                    <thead>
+                        <tr>
+                            <th>Название</th>
+                            <th>Вероятность</th>
+                            <th>Время (дни)</th>
+                            <th>Стоимость ($)</th>
+                            <th>Стратегия</th>
+                            <th>Категория</th>
+                            <th>Удалить</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+
+            <!-- Раздел 4: Настройки и стратегия -->
+            <div id="settings-strategy" class="content-section">
+                <h2>Настройки и стратегия</h2>
+                <div class="section">
+                    <h3>Настройки модели</h3>
+                    <div class="input-row">
+                        <div class="input-group">
+                            <label for="timeThreshold">Пороговое время (дни):</label>
+                            <input type="number" id="timeThreshold" value="150">
+                        </div>
+                        <div class="input-group">
+                            <label for="costThreshold">Пороговая стоимость ($):</label>
+                            <input type="number" id="costThreshold" value="75000">
+                        </div>
+                        <div class="input-group">
+                            <label for="targetTime">Целевое время (дни):</label>
+                            <input type="number" id="targetTime" value="120">
+                        </div>
+                        <div class="input-group">
+                            <label for="targetCost">Целевая стоимость ($):</label>
+                            <input type="number" id="targetCost" value="60000">
+                        </div>
+                    </div>
+                </div>
+                <hr style="border-color: #7289DA; margin: 20px 0;">
+                <div class="section">
+                    <h3>Стратегия управления рисками</h3>
+                    <div class="input-row">
+                        <div class="input-group">
+                            <label for="mitigationStrategy">Стратегия:</label>
+                            <select id="mitigationStrategy">
+                                <option value="Ignore">Игнорировать</option>
+                                <option value="Mitigate">Снизить</option>
+                                <option value="Eliminate">Устранить</option>
+                            </select>
+                        </div>
+                        <div class="input-group">
+                            <label for="mitigationBudget">Бюджет ($):</label>
+                            <input type="number" id="mitigationBudget" value="10000" placeholder="Бюджет">
+                        </div>
+                        <button onclick="window.setMitigation()">Установить</button>
+                        <button onclick="window.runSimulation()">Пересчитать симуляцию</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Раздел 5: Результаты и рекомендации -->
+            <div id="results" class="content-section dashboard">
+                <h2>Результаты и рекомендации</h2>
+                <div id="dashboardSummary"></div>
+                <div class="chart-row">
+                    <div class="chart-container chart-centered">
+                        <h4>Стоимость проекта</h4>
+                        <canvas id="metricsChart" width="600" height="200"></canvas>
+                    </div>
+                    <div class="chart-container chart-centered">
+                        <h4>Распределение бюджета управления</h4>
+                        <canvas id="mitigationPieChart" width="400" height="200"></canvas>
+                    </div>
+                </div>
+                <div class="chart-row">
+                    <div class="chart-container">
+                        <h4>Влияние рисков на стоимость</h4>
+                        <canvas id="costImpactChart" width="500" height="300"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <h4>Влияние рисков на время</h4>
+                        <canvas id="timeImpactChart" width="500" height="300"></canvas>
+                    </div>
+                </div>
+                <div class="chart-row">
+                    <div class="chart-container">
+                        <h4>Распределение стоимости</h4>
+                        <canvas id="costDistributionChart" width="500" height="300"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <h4>Распределение времени</h4>
+                        <canvas id="timeDistributionChart" width="500" height="300"></canvas>
+                    </div>
+                </div>
+                <table id="riskResultsTable">
+                    <thead>
+                        <tr>
+                            <th>Название</th>
+                            <th>Снижен</th>
+                            <th>Время (дни)</th>
+                            <th>Стоимость ($)</th>
+                            <th>Стратегия</th>
+                            <th>Категория</th>
+                            <th>Приоритет</th>
+                            <th>Затраты на управление ($)</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+                <div id="recommendations"></div>
+                <div id="riskLogs">
+                    <h3>Логи рисков</h3>
+                    <table id="riskLogsTable">
+                        <thead>
+                            <tr>
+                                <th>Риск</th>
+                                <th>Действие</th>
+                                <th>Детали</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
     </div>
 
-    <!-- Обновление прогресса -->
-    <div class="section">
-        <h2>Обновление прогресса</h2>
-        <div id="progressUpdateForm"></div>
-        <button onclick="window.updateProgress()">Обновить прогресс</button>
-    </div>
+    <!-- Контейнер для всплывающих уведомлений -->
+    <div id="toast-container"></div>
 
-    <!-- Добавление рисков -->
-    <div class="section">
-        <h2>Риски</h2>
-        <div class="input-row">
-            <div class="input-group">
-                <label for="riskName">Название риска</label>
-                <input type="text" id="riskName" placeholder="Название">
-            </div>
-            <div class="input-group">
-                <label for="riskProb">Вероятность (0-1)</label>
-                <input type="number" id="riskProb" step="0.1" min="0" max="1" placeholder="Вероятность">
-            </div>
-            <div class="input-group">
-                <label for="riskTime">Влияние на время (дни)</label>
-                <input type="number" id="riskTime" min="0" placeholder="Влияние на время">
-            </div>
-            <div class="input-group">
-                <label for="riskCost">Влияние на стоимость ($)</label>
-                <input type="number" id="riskCost" min="0" placeholder="Влияние на стоимость">
-            </div>
-            <div class="input-group">
-                <label for="riskStrategy">Стратегия</label>
-                <select id="riskStrategy">
-                    <option value="Ignore">Игнорировать</option>
-                    <option value="Mitigate">Снизить</option>
-                    <option value="Eliminate">Устранить</option>
-                </select>
-            </div>
-            <div class="input-group">
-                <label for="riskCategory">Категория</label>
-                <select id="riskCategory">
-                    <option value="Технические">Технические</option>
-                    <option value="Организационные">Организационные</option>
-                    <option value="Внешние">Внешние</option>
-                    <option value="Не указано">Не указано</option>
-                </select>
-            </div>
-            <button onclick="window.addCustomRisk()">Добавить риск</button>
-        </div>
-        <div class="input-row">
-            <div class="input-group">
-                <label for="typicalRiskCategory">Типичные риски</label>
-                <select id="typicalRiskCategory">
-                    <option value="">Выберите категорию</option>
-                    <option value="Технические">Технические</option>
-                    <option value="Организационные">Организационные</option>
-                    <option value="Внешние">Внешние</option>
-                </select>
-            </div>
-            <button onclick="window.addTypicalRisksByCategory(document.getElementById('typicalRiskCategory').value)">Добавить риски категории</button>
-        </div>
-        <table id="risksTable">
-            <thead>
-                <tr>
-                    <th>Название</th>
-                    <th>Вероятность</th>
-                    <th>Время (дни)</th>
-                    <th>Стоимость ($)</th>
-                    <th>Стратегия</th>
-                    <th>Категория</th>
-                    <th>Удалить</th>
-                </tr>
-            </thead>
-            <tbody></tbody>
-        </table>
-    </div>
-
-    <!-- Настройки модели -->
-    <div class="section">
-        <h2>Настройки модели</h2>
-        <div class="input-row">
-            <div class="input-group">
-                <label for="timeThreshold">Пороговое время (дни):</label>
-                <input type="number" id="timeThreshold" value="150">
-            </div>
-            <div class="input-group">
-                <label for="costThreshold">Пороговая стоимость ($):</label>
-                <input type="number" id="costThreshold" value="75000">
-            </div>
-            <div class="input-group">
-                <label for="targetTime">Целевое время (дни):</label>
-                <input type="number" id="targetTime" value="120">
-            </div>
-            <div class="input-group">
-                <label for="targetCost">Целевая стоимость ($):</label>
-                <input type="number" id="targetCost" value="60000">
-            </div>
-        </div>
-        <div class="action-buttons">
-            <button onclick="window.createModel()">Создать модель</button>
-            <!--<button onclick="window.saveData()">Сохранить данные</button>-->
-            <button onclick="window.loadData()">Загрузить данные</button>
-        </div>
-    </div>
-
-    <!-- Стратегия управления рисками -->
-    <div class="section">
-        <h2>Стратегия управления рисками</h2>
-        <div class="input-row">
-            <div class="input-group">
-                <label for="mitigationStrategy">Стратегия:</label>
-                <select id="mitigationStrategy">
-                    <option value="Ignore">Игнорировать</option>
-                    <option value="Mitigate">Снизить</option>
-                    <option value="Eliminate">Устранить</option>
-                </select>
-            </div>
-            <div class="input-group">
-                <label for="mitigationBudget">Бюджет ($):</label>
-                <input type="number" id="mitigationBudget" value="10000" placeholder="Бюджет">
-            </div>
-            <button onclick="window.setMitigation()">Установить</button>
-            <button onclick="window.runSimulation()">Пересчитать симуляцию</button>
-
-        </div>
-    </div>
-
-    <!-- Результаты и рекомендации -->
-    <div class="section dashboard">
-        <h2>Результаты и рекомендации</h2>
-    <div id="dashboardSummary"></div>
-    
-    <div class="chart-row">
-        <div class="chart-container chart-centered">
-            <h4>Стоимость проекта</h4>
-            <canvas id="metricsChart" width="600" height="200"></canvas>
-        </div>
-        <div class="chart-container chart-centered">
-            <h4>Распределение бюджета управления</h4>
-            <canvas id="mitigationPieChart" width="400" height="200"></canvas>
-        </div>
-    </div>
-
-    <div class="chart-row">
-        <div class="chart-container">
-            <h4>Влияние рисков на стоимость</h4>
-            <canvas id="costImpactChart" width="500" height="300"></canvas>
-        </div>
-        <div class="chart-container">
-            <h4>Влияние рисков на время</h4>
-            <canvas id="timeImpactChart" width="500" height="300"></canvas>
-        </div>
-    </div>
-    
-    <div class="chart-row">
-        <div class="chart-container">
-            <h4>Распределение стоимости</h4>
-            <canvas id="costDistributionChart" width="500" height="300"></canvas>
-        </div>
-        <div class="chart-container">
-            <h4>Распределение времени</h4>
-            <canvas id="timeDistributionChart" width="500" height="300"></canvas>
-        </div>
-    </div>
-        
-        <table id="riskResultsTable">
-            <thead>
-                <tr>
-                    <th>Название</th>
-                    <th>Снижен</th>
-                    <th>Время (дни)</th>
-                    <th>Стоимость ($)</th>
-                    <th>Стратегия</th>
-                    <th>Категория</th>
-                    <th>Приоритет</th>
-                    <th>Затраты на управление ($)</th> <!-- Новая колонка -->
-                </tr>
-            </thead>
-            <tbody></tbody>
-        </table>
-        <div id="recommendations"></div>
-        <div id="riskLogs">
-            <h3>Логи рисков</h3>
-            <table id="riskLogsTable">
-                <thead>
-                    <tr>
-                        <th>Риск</th>
-                        <th>Действие</th>
-                        <th>Детали</th>
-                    </tr>
-                </thead>
-                <tbody></tbody>
-            </table>
-        </div>
-    </div>
-
+    <!-- Скрипты -->
     <script type="module">
         import { stages, addStage, removeStage, updateStagesTable } from './stages.js';
         import { updateProgress, fetchRiskLogs } from './api.js';
         import { updateRiskLogsTable } from './dashboard.js';
-    
+
         // Динамическое создание формы для обновления прогресса
         function updateProgressForm() {
             console.log("Вызов updateProgressForm, stages:", stages);
@@ -282,22 +331,160 @@
                 formDiv.appendChild(stageDiv);
             });
         }
-    
+
+        // Функция для обновления таблицы этапов в разделе "Обновление прогресса"
+        function updateProgressStagesTable() {
+            const table = document.getElementById('progressStagesTable');
+            while (table.rows.length > 1) table.deleteRow(1);
+            stages.forEach((stage, index) => {
+                const row = table.insertRow();
+                row.insertCell().textContent = stage.name;
+                row.insertCell().textContent = stage.duration;
+                row.insertCell().textContent = stage.cost;
+                row.insertCell().textContent = stage.dependencies.join(', ');
+                row.insertCell().textContent = stage.actualDuration || 'N/A';
+                row.insertCell().textContent = stage.actualCost || 'N/A';
+                row.insertCell().innerHTML = `<button class="delete-btn" onclick="window.removeStage(${index})">✖</button>`;
+            });
+        }
+
+        // Функция для показа всплывающих уведомлений
+        function showToast(message, type = 'success') {
+            const toastContainer = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.textContent = message;
+            toastContainer.appendChild(toast);
+            setTimeout(() => {
+                toast.classList.add('fade-out');
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        // Переопределяем addStage для показа уведомления
+        const originalAddStage = addStage;
+        window.addStage = function() {
+            const stageName = document.getElementById('stageName').value;
+            const stageDuration = parseInt(document.getElementById('stageDuration').value);
+            const stageCost = parseInt(document.getElementById('stageCost').value);
+            const stageDependenciesInput = document.getElementById('stageDependencies').value;
+            const stageDependencies = stageDependenciesInput ? stageDependenciesInput.split(',').map(dep => dep.trim()) : [];
+
+            if (!stageName || isNaN(stageDuration) || isNaN(stageCost)) {
+                showToast("Пожалуйста, заполните все поля корректно", "error");
+                return;
+            }
+
+            originalAddStage();
+            showToast("Этап успешно добавлен!", "success");
+        };
+
+        // Переопределяем removeStage для показа уведомления
+        const originalRemoveStage = removeStage;
+        window.removeStage = function(index) {
+            originalRemoveStage(index);
+            showToast("Этап удалён!", "success");
+        };
+
+        // Переопределяем addCustomRisk для показа уведомления
+        const originalAddCustomRisk = window.addCustomRisk;
+        window.addCustomRisk = function() {
+            const riskName = document.getElementById('riskName').value;
+            const riskProb = parseFloat(document.getElementById('riskProb').value);
+            const riskTime = parseInt(document.getElementById('riskTime').value);
+            const riskCost = parseInt(document.getElementById('riskCost').value);
+
+            if (!riskName || isNaN(riskProb) || isNaN(riskTime) || isNaN(riskCost) || riskProb < 0 || riskProb > 1) {
+                showToast("Пожалуйста, заполните все поля корректно", "error");
+                return;
+            }
+
+            originalAddCustomRisk();
+            showToast("Риск добавлен!", "success");
+        };
+
+        // Переопределяем updateProgress для показа уведомления и обновления таблицы
+        const originalUpdateProgress = updateProgress;
+        window.updateProgress = async function() {
+            try {
+                await originalUpdateProgress();
+                updateProgressStagesTable(); // Обновляем таблицу после обновления прогресса
+                showToast("Прогресс обновлён!", "success");
+            } catch (error) {
+                showToast("Ошибка при обновлении прогресса", "error");
+            }
+        };
+
         // Делаем updateProgressForm доступной глобально
         window.updateProgressForm = updateProgressForm;
-    
+
+        // Делаем updateProgressStagesTable доступной глобально
+        window.updateProgressStagesTable = updateProgressStagesTable;
+
         // Переопределяем updateStagesTable для вызова updateProgressForm
         const originalUpdateStagesTable = updateStagesTable;
         window.updateStagesTable = function() {
             originalUpdateStagesTable();
             updateProgressForm();
         };
-    
+
         // Инициализация формы и логов при загрузке
         document.addEventListener('DOMContentLoaded', async () => {
             updateProgressForm();
+            window.updateStagesTable();
+            updateProgressStagesTable();
             const logs = await fetchRiskLogs();
             updateRiskLogsTable(logs);
+
+            // Логика переключения разделов с анимацией
+            const navItems = document.querySelectorAll('.nav-item');
+            const sections = document.querySelectorAll('.content-section');
+
+            navItems.forEach(item => {
+                item.addEventListener('click', () => {
+                    console.log('Переключение на раздел:', item.getAttribute('data-section'));
+
+                    // Удаляем активный класс у всех пунктов навигации
+                    navItems.forEach(nav => nav.classList.remove('active'));
+                    // Добавляем активный класс к текущему пункту
+                    item.classList.add('active');
+
+                    // Сбрасываем классы анимации у всех секций
+                    sections.forEach(section => {
+                        section.classList.remove('slide-in', 'slide-out');
+                    });
+
+                    // Скрываем все активные секции с анимацией
+                    let activeSection = null;
+                    sections.forEach(section => {
+                        if (section.classList.contains('active')) {
+                            console.log('Скрываем секцию:', section.id);
+                            activeSection = section;
+                            section.classList.remove('active');
+                            section.classList.add('slide-out');
+                        }
+                    });
+
+                    // Показываем выбранную секцию с анимацией
+                    const sectionId = item.getAttribute('data-section');
+                    const targetSection = document.getElementById(sectionId);
+
+                    // Ждём завершения анимации slide-out (300 мс), затем показываем новую секцию
+                    setTimeout(() => {
+                        // Устанавливаем display: none для всех неактивных секций
+                        sections.forEach(section => {
+                            if (!section.classList.contains('active')) {
+                                section.style.display = 'none';
+                            }
+                        });
+
+                        console.log('Показываем секцию:', sectionId);
+                        targetSection.style.display = 'block'; // Показываем целевую секцию перед анимацией
+                        targetSection.classList.add('active');
+                        targetSection.classList.add('slide-in');
+                    }, 300);
+                });
+            });
         });
     </script>
 

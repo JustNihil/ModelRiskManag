@@ -33,9 +33,8 @@ export async function loadData() {
         // Обновляем таблицы
         updateStagesTable();
         updateRisksTable();
-        
-        // Обновляем форму прогресса
-        window.updateProgressForm(); // Добавляем вызов функции
+        window.updateProgressStagesTable();
+        window.updateProgressForm();
 
         alert("Последние данные успешно загружены из базы данных.");
     } catch (error) {

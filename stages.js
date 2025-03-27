@@ -1,4 +1,3 @@
-// stages.js
 export const stages = [];
 
 export function addStage() {
@@ -17,7 +16,8 @@ export function addStage() {
         }
         stages.push({ name, safeName, duration, cost, dependencies, actualDuration: 0, actualCost: 0 });
         console.log(`Этап "${name}" добавлен`);
-        window.updateStagesTable(); // Изменяем на window.updateStagesTable
+        window.updateStagesTable();
+        window.updateProgressStagesTable();
         document.getElementById('stageName').value = '';
         document.getElementById('stageDuration').value = '';
         document.getElementById('stageCost').value = '';
@@ -36,7 +36,8 @@ export function removeStage(index) {
     }
     stages.splice(index, 1);
     console.log(`Этап "${stageName}" удален`);
-    window.updateStagesTable(); // Изменяем на window.updateStagesTable
+    window.updateStagesTable();
+    window.updateProgressStagesTable();
 }
 
 export function updateStagesTable() {
