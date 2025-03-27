@@ -1000,10 +1000,14 @@ public class ServerManager {
         remainingMitigationBudget = mitigationBudget;
         contingencyReserveUsed = 0;
 
+        // Устанавливаем глобальную стратегию по умолчанию, если не задана
+        String globalStrategy = mitigationStrategy != null && !mitigationStrategy.isEmpty() ? mitigationStrategy : "Monitor";
+
         System.out.println("Starting PERT simulation with " + ITERATIONS + " iterations...");
         System.out.println("Number of stages: " + stages.size());
         System.out.println("Number of risks: " + risks.size());
         System.out.println("Mitigation budget: " + mitigationBudget);
+        System.out.println("Global mitigation strategy: " + globalStrategy);
         System.out.println("Base cost: " + baseCost);
 
         // Обрабатываем риски перед симуляцией
@@ -1011,18 +1015,25 @@ public class ServerManager {
             risk.priority = risk.probability * (risk.impactTime + risk.impactCost / 1000.0);
             System.out.println("Risk: " + risk.name + ", Priority: " + risk.priority);
 
+            // Определяем стратегию: индивидуальная имеет приоритет, иначе глобальная
+            String effectiveStrategy = (risk.strategy != null && !risk.strategy.isEmpty() && !"Ignore".equalsIgnoreCase(risk.strategy)) 
+                    ? risk.strategy 
+                    : globalStrategy;
+
             if (!risk.mitigated) {
-                if ("Mitigate".equals(risk.strategy) && remainingMitigationBudget >= 500) {
+                if ("Mitigate".equalsIgnoreCase(effectiveStrategy) && remainingMitigationBudget >= 500) {
                     remainingMitigationBudget -= 500;
                     risk.mitigationCost = 500;
                     risk.mitigated = true;
-                    logRiskAction(risk.name, "Смягчён", "Риск смягчён с помощью стратегии Mitigate за $500");
+                    risk.strategy = "Mitigate"; // Обновляем стратегию для консистентности
+                    logRiskAction(risk.name, "Смягчён", "Риск смягчён за $500 (стратегия: " + effectiveStrategy + ")");
                     System.out.println("Risk " + risk.name + " mitigated (Mitigate) for $500");
-                } else if ("Eliminate".equals(risk.strategy) && remainingMitigationBudget >= 2000) {
+                } else if ("Eliminate".equalsIgnoreCase(effectiveStrategy) && remainingMitigationBudget >= 2000) {
                     remainingMitigationBudget -= 2000;
                     risk.mitigationCost = 2000;
                     risk.mitigated = true;
-                    logRiskAction(risk.name, "Устранён", "Риск устранён с помощью стратегии Eliminate за $2000");
+                    risk.strategy = "Eliminate"; // Обновляем стратегию для консистентности
+                    logRiskAction(risk.name, "Устранён", "Риск устранён за $2000 (стратегия: " + effectiveStrategy + ")");
                     System.out.println("Risk " + risk.name + " mitigated (Eliminate) for $2000");
                 } else if (risk.priority > 10 && remainingMitigationBudget >= 500) {
                     remainingMitigationBudget -= 500;
@@ -1079,12 +1090,12 @@ public class ServerManager {
                                       ", Initial Cost Impact = " + riskCostIter);
 
                     if (risk.mitigated) {
-                        if ("Mitigate".equals(risk.strategy)) {
+                        if ("Mitigate".equalsIgnoreCase(risk.strategy)) {
                             riskTimeIter *= 0.5;
                             riskCostIter *= 0.5;
                             System.out.println("Risk " + risk.name + " mitigated (Mitigate): Reduced Time Impact = " + riskTimeIter + 
                                               ", Reduced Cost Impact = " + riskCostIter);
-                        } else if ("Eliminate".equals(risk.strategy)) {
+                        } else if ("Eliminate".equalsIgnoreCase(risk.strategy)) {
                             riskTimeIter = 5.0;
                             riskCostIter = 0.0;
                             System.out.println("Risk " + risk.name + " mitigated (Eliminate): Fixed Time Impact = " + riskTimeIter + 
@@ -1155,7 +1166,6 @@ public class ServerManager {
 
             if (isCriticalByTime || isCriticalByCost) {
                 criticalStages.add(stage);
-                // Формируем подробное пояснение
                 StringBuilder reason = new StringBuilder("Этап \"" + stage.name + "\" помечен как критический по следующим причинам: ");
                 if (isCriticalByTime) {
                     reason.append("ожидаемая длительность (")
