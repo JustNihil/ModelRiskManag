@@ -136,37 +136,39 @@ body {
 /* Основной контент */
 .main-content {
     grid-column: 2 / 3;
-    padding: 20px;
+    padding: 40px; /* Увеличиваем padding для большего пространства */
     overflow-y: auto;
     position: relative; /* Контейнер для позиционирования секций */
 }
 
 .content-section {
-    position: absolute; /* Все секции перекрываются */
+    position: absolute; /* Все секции всегда absolute */
     top: 0;
-    left: 0;
-    width: 100%;
+    left: 40px; /* Сдвигаем вправо на 40px */
+    width: calc(100% - 80px); /* Уменьшаем ширину, чтобы учесть отступы с обеих сторон */
     opacity: 0;
     transform: translateX(20px);
     transition: opacity 0.3s ease, transform 0.3s ease;
-    display: none; /* По умолчанию скрыты */
+    visibility: hidden; /* Скрываем неактивные секции */
+    margin: 20px 0; /* Добавляем margin сверху и снизу для пространства */
 }
 
 .content-section.active {
-    position: relative; /* Активная секция становится видимой */
-    display: block; /* Показываем активную секцию */
     opacity: 1;
     transform: translateX(0);
+    visibility: visible; /* Показываем активную секцию */
 }
 
 .content-section.slide-out {
     opacity: 0;
     transform: translateX(-20px);
+    visibility: hidden; /* Скрываем при уходе */
 }
 
 .content-section.slide-in {
     opacity: 1;
     transform: translateX(0);
+    visibility: visible; /* Показываем при входе */
 }
 
 .section {
@@ -334,6 +336,11 @@ tr:hover {
     padding: 20px;
 }
 
+/* Убираем обводку для раздела "Результаты" */
+#results.dashboard {
+    border: none; /* Убираем цветную обводку */
+}
+
 h1, h2, h3, h4 {
     color: #FFFFFF;
     font-weight: 700;
@@ -499,6 +506,26 @@ h4 {
     .main-content {
         grid-column: 1 / 2;
         grid-row: 2 / 3;
+        padding: 20px; /* Меньший padding на мобильных устройствах */
+    }
+
+    .content-section {
+        transform: translateY(20px); /* Смещение вниз вместо вправо */
+        margin: 10px 0; /* Меньший margin на мобильных устройствах */
+        left: 20px; /* Меньший отступ слева на мобильных */
+        width: calc(100% - 40px); /* Учитываем меньшие отступы */
+    }
+
+    .content-section.active {
+        transform: translateY(0);
+    }
+
+    .content-section.slide-out {
+        transform: translateY(-20px); /* Уход вверх */
+    }
+
+    .content-section.slide-in {
+        transform: translateY(0);
     }
 
     .nav-list {
@@ -568,23 +595,6 @@ h4 {
     .toast {
         font-size: 14px;
         padding: 8px 16px;
-    }
-
-    /* Анимация для мобильных устройств (вертикальная) */
-    .content-section {
-        transform: translateY(20px); /* Смещение вниз вместо вправо */
-    }
-
-    .content-section.active {
-        transform: translateY(0);
-    }
-
-    .content-section.slide-out {
-        transform: translateY(-20px); /* Уход вверх */
-    }
-
-    .content-section.slide-in {
-        transform: translateY(0);
     }
 
     /* На мобильных устройствах кнопки также должны быть одинаковой ширины */

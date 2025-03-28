@@ -301,7 +301,7 @@
         import { stages, addStage, removeStage, updateStagesTable } from './stages.js';
         import { updateProgress, fetchRiskLogs } from './api.js';
         import { updateRiskLogsTable } from './dashboard.js';
-
+    
         // Динамическое создание формы для обновления прогресса
         function updateProgressForm() {
             console.log("Вызов updateProgressForm, stages:", stages);
@@ -335,26 +335,26 @@
                 formDiv.appendChild(stageDiv);
             });
         }
-
+    
         // Функция для обновления таблицы этапов в разделе "Обновление прогресса"
         function updateProgressStagesTable() {
-        const table = document.getElementById('progressStagesTable');
-        while (table.rows.length > 1) table.deleteRow(1);
-        stages.forEach((stage, index) => {
-            const row = table.insertRow();
-            row.insertCell().textContent = stage.name;
-            row.insertCell().textContent = stage.duration;
-            row.insertCell().textContent = stage.cost;
-            row.insertCell().textContent = stage.dependencies.join(', ');
-            row.insertCell().textContent = stage.actualDuration || 'N/A';
-            row.insertCell().textContent = stage.actualCost || 'N/A';
-            row.insertCell().innerHTML = `<button class="delete-btn" onclick="window.removeStage(${index})">✖</button>`;
-        });
-    }
-
-    // Делаем функцию глобально доступной
-    window.updateProgressStagesTable = updateProgressStagesTable;
-
+            const table = document.getElementById('progressStagesTable');
+            while (table.rows.length > 1) table.deleteRow(1);
+            stages.forEach((stage, index) => {
+                const row = table.insertRow();
+                row.insertCell().textContent = stage.name;
+                row.insertCell().textContent = stage.duration;
+                row.insertCell().textContent = stage.cost;
+                row.insertCell().textContent = stage.dependencies.join(', ');
+                row.insertCell().textContent = stage.actualDuration || 'N/A';
+                row.insertCell().textContent = stage.actualCost || 'N/A';
+                row.insertCell().innerHTML = `<button class="delete-btn" onclick="window.removeStage(${index})">✖</button>`;
+            });
+        }
+    
+        // Делаем функцию глобально доступной
+        window.updateProgressStagesTable = updateProgressStagesTable;
+    
         // Функция для показа всплывающих уведомлений
         function showToast(message, type = 'success') {
             const toastContainer = document.getElementById('toast-container');
@@ -367,7 +367,7 @@
                 setTimeout(() => toast.remove(), 300);
             }, 3000);
         }
-
+    
         // Переопределяем addStage для показа уведомления
         const originalAddStage = addStage;
         window.addStage = function() {
@@ -376,23 +376,23 @@
             const stageCost = parseInt(document.getElementById('stageCost').value);
             const stageDependenciesInput = document.getElementById('stageDependencies').value;
             const stageDependencies = stageDependenciesInput ? stageDependenciesInput.split(',').map(dep => dep.trim()) : [];
-
+    
             if (!stageName || isNaN(stageDuration) || isNaN(stageCost)) {
                 showToast("Пожалуйста, заполните все поля корректно", "error");
                 return;
             }
-
+    
             originalAddStage();
             showToast("Этап успешно добавлен!", "success");
         };
-
+    
         // Переопределяем removeStage для показа уведомления
         const originalRemoveStage = removeStage;
         window.removeStage = function(index) {
             originalRemoveStage(index);
             showToast("Этап удалён!", "success");
         };
-
+    
         // Переопределяем addCustomRisk для показа уведомления
         const originalAddCustomRisk = window.addCustomRisk;
         window.addCustomRisk = function() {
@@ -400,16 +400,16 @@
             const riskProb = parseFloat(document.getElementById('riskProb').value);
             const riskTime = parseInt(document.getElementById('riskTime').value);
             const riskCost = parseInt(document.getElementById('riskCost').value);
-
+    
             if (!riskName || isNaN(riskProb) || isNaN(riskTime) || isNaN(riskCost) || riskProb < 0 || riskProb > 1) {
                 showToast("Пожалуйста, заполните все поля корректно", "error");
                 return;
             }
-
+    
             originalAddCustomRisk();
             showToast("Риск добавлен!", "success");
         };
-
+    
         // Переопределяем updateProgress для показа уведомления и обновления таблицы
         const originalUpdateProgress = updateProgress;
         window.updateProgress = async function() {
@@ -420,20 +420,20 @@
                 showToast("Ошибка при обновлении прогресса", "error");
             }
         };
-
+    
         // Делаем updateProgressForm доступной глобально
         window.updateProgressForm = updateProgressForm;
-
+    
         // Делаем updateProgressStagesTable доступной глобально
         window.updateProgressStagesTable = updateProgressStagesTable;
-
+    
         // Переопределяем updateStagesTable для вызова updateProgressForm
         const originalUpdateStagesTable = updateStagesTable;
         window.updateStagesTable = function() {
             originalUpdateStagesTable();
             updateProgressForm();
         };
-
+    
         // Инициализация формы и логов при загрузке
         document.addEventListener('DOMContentLoaded', async () => {
             updateProgressForm();
@@ -441,25 +441,27 @@
             updateProgressStagesTable();
             const logs = await fetchRiskLogs();
             updateRiskLogsTable(logs);
-
+    
             // Логика переключения разделов с анимацией
             const navItems = document.querySelectorAll('.nav-item');
             const sections = document.querySelectorAll('.content-section');
-
+    
+            // Изначально скрываем все секции, кроме активной
+            sections.forEach(section => {
+                if (!section.classList.contains('active')) {
+                    section.classList.add('slide-out');
+                }
+            });
+    
             navItems.forEach(item => {
                 item.addEventListener('click', () => {
                     console.log('Переключение на раздел:', item.getAttribute('data-section'));
-
+    
                     // Удаляем активный класс у всех пунктов навигации
                     navItems.forEach(nav => nav.classList.remove('active'));
                     // Добавляем активный класс к текущему пункту
                     item.classList.add('active');
-
-                    // Сбрасываем классы анимации у всех секций
-                    sections.forEach(section => {
-                        section.classList.remove('slide-in', 'slide-out');
-                    });
-
+    
                     // Скрываем все активные секции с анимацией
                     let activeSection = null;
                     sections.forEach(section => {
@@ -467,26 +469,20 @@
                             console.log('Скрываем секцию:', section.id);
                             activeSection = section;
                             section.classList.remove('active');
+                            section.classList.remove('slide-in');
                             section.classList.add('slide-out');
                         }
                     });
-
+    
                     // Показываем выбранную секцию с анимацией
                     const sectionId = item.getAttribute('data-section');
                     const targetSection = document.getElementById(sectionId);
-
+    
                     // Ждём завершения анимации slide-out (300 мс), затем показываем новую секцию
                     setTimeout(() => {
-                        // Устанавливаем display: none для всех неактивных секций
-                        sections.forEach(section => {
-                            if (!section.classList.contains('active')) {
-                                section.style.display = 'none';
-                            }
-                        });
-
                         console.log('Показываем секцию:', sectionId);
-                        targetSection.style.display = 'block'; // Показываем целевую секцию перед анимацией
                         targetSection.classList.add('active');
+                        targetSection.classList.remove('slide-out');
                         targetSection.classList.add('slide-in');
                     }, 300);
                 });
@@ -501,5 +497,5 @@
     <script type="module" src="simulation.js"></script>
     <script type="module" src="storage.js"></script>
     <script type="module" src="main.js"></script>
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'926f4afb89e8c200',t:'MTc0MzA4Mjc1Ni4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'926f4afb89e8c200',t:'MTc0MzA4Mjc1Ni4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'927770933913be47',t:'MTc0MzE2ODE4Mi4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
