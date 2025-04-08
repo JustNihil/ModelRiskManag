@@ -282,67 +282,120 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import org.eclipse.jetty.servlets.CrossOriginFilter;
-import javax.servlet.DispatcherType;
-import java.util.EnumSet;
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.PreparedStatement;
-import java.sql.SQLException;
-import org.eclipse.jetty.servlet.FilterHolder;
+import java.io.*;
+import java.sql.*;
+import java.util.*;
 import java.util.stream.Collectors;
 
 public class ServerManager {
     ArrayList<Stage> stages = new ArrayList<>();
     ArrayList<Risk> risks = new ArrayList<>();
+    List<RiskLog> riskLogs = new ArrayList<>();
     double totalTime, totalCost, mitigationBudget;
     String mitigationStrategy;
-
-    // Настройка PostgreSQL
-    private static final String DB_URL = "jdbc:postgresql://localhost:5432/risk_db";
+    List<Double> timeResults = new ArrayList<>();
+    List<Double> costResults = new ArrayList<>();
+    double time90thPercentile, cost90thPercentile;
+    double timeThreshold = 150, costThreshold = 75000;
+    double timeExceedProbability, costExceedProbability;
+    double timeStdDev, costStdDev;
+    double timeConfidenceLower, timeConfidenceUpper;
+    double costConfidenceLower, costConfidenceUpper;
+    double targetTime = 120, targetCost = 60000;
+    double timeTargetProbability, costTargetProbability;
+    List<Risk> criticalRisks = new ArrayList<>();
+    List<Stage> criticalStages = new ArrayList<>();
+    double contingencyReserve = 5000; // Резерв на риски
+    double contingencyReserveUsed = 0; // Использованный резерв
+    double baseCost = 0; // Базовая стоимость без учета рисков
+    double scheduleVariance = 0; // Отклонение по времени
+    double costVariance = 0; // Отклонение по стоимости
+    double remainingMitigationBudget; // Остаток бюджета на управление рисками
+    List<String> criticalStageRecommendations = new ArrayList<>();
+    
+    private static final String DB_URL = "jdbc:postgresql://localhost:5435/risk_db";
     private static final String DB_USER = "risk_user";
     private static final String DB_PASSWORD = "235521";
-    private Connection dbConnection;
+    private static final String PYTHON_PATH = "C:/Users/dmitr/AppData/Local/Programs/Python/Python313/python.exe";
+    private static final String PYTHON_SERVER_DIR = "C:/Users/dmitr/Models";
+    private static final String SUPERSET_CLI_PATH = "C:/Users/dmitr/Models/superset_cli.py";
+    private java.sql.Connection dbConnection;
 
     class Stage {
         String name;
-        double duration;
-        double cost;
-        Stage(String name, double duration, double cost) {
+        double duration, cost;
+        double actualDuration, actualCost;
+        double durationOptimistic, durationPessimistic;
+        double costOptimistic, costPessimistic;
+        List<String> dependencies;
+
+        Stage() {}
+
+        Stage(String name, double duration, double cost, List<String> dependencies) {
             this.name = name;
             this.duration = duration;
             this.cost = cost;
+            this.dependencies = dependencies != null ? dependencies : new ArrayList<>();
+            this.actualDuration = 0;
+            this.actualCost = 0;
+            computeVariations();
+        }
+
+        void computeVariations() {
+            this.durationOptimistic = this.duration * 0.7;
+            this.durationPessimistic = this.duration * 1.3;
+            this.costOptimistic = this.cost * 0.7;
+            this.costPessimistic = this.cost * 1.3;
         }
     }
 
     static class Risk {
         String name;
         double probability;
-        double impactTime;
-        double impactCost;
+        double impactTime, impactCost;
         boolean mitigated;
-        String strategy;
+        String strategy, category;
+        double priority;
+        double impactTimeOptimistic, impactTimePessimistic;
+        double impactCostOptimistic, impactCostPessimistic;
+        double mitigationCost; // Новое поле для хранения затрат на управление риском
 
-        Risk(String name, double probability, double impactTime, double impactCost) {
-            this.name = name;
-            this.probability = probability;
-            this.impactTime = impactTime;
-            this.impactCost = impactCost;
-            this.mitigated = false;
-            this.strategy = "Ignore";
-        }
-
-        Risk(String name, double probability, double impactTime, double impactCost, String strategy) {
+        Risk(String name, double probability, double impactTime, double impactCost, String strategy, String category) {
             this.name = name;
             this.probability = probability;
             this.impactTime = impactTime;
             this.impactCost = impactCost;
             this.mitigated = false;
             this.strategy = strategy != null && !strategy.isEmpty() ? strategy : "Ignore";
+            this.category = category != null ? category : "Не указано";
+            this.mitigationCost = 0.0; // Инициализация
+            computeVariations();
+        }
+
+	     // Пустой конструктор
+	        Risk() {
+	            this.mitigated = false;
+	            this.strategy = "Ignore";
+	            this.category = "Не указано";
+	            this.mitigationCost = 0.0;
+	        }
+        
+        void computeVariations() {
+            this.impactTimeOptimistic = impactTime * 0.6;
+            this.impactTimePessimistic = impactTime * 1.4;
+            this.impactCostOptimistic = impactCost * 0.6;
+            this.impactCostPessimistic = impactCost * 1.4;
+            this.priority = probability * (impactTime + impactCost / 1000);
+        }
+    }
+    
+    static class RiskLog {
+        String riskName, action, details;
+
+        RiskLog(String riskName, String action, String details) {
+            this.riskName = riskName;
+            this.action = action;
+            this.details = details;
         }
     }
 
@@ -351,59 +404,97 @@ public class ServerManager {
         double budget;
     }
 
+    class ModelData {
+        List<Stage> stages;
+        List<Risk> risks;
+        double timeThreshold, costThreshold;
+        double targetTime, targetCost;
+    }
+
+    class ProgressUpdate {
+        List<StageUpdate> stageUpdates;
+    }
+
+    class StageUpdate {
+        String name;
+        double actualDuration;
+        double actualCost;
+    }
+
     private static final List<Risk> typicalRisks = Arrays.asList(
-        new Risk("Задержка в разработке", 0.4, 10, 5000, "Mitigate"),
-        new Risk("Отсутствие сотрудников", 0.3, 30, 10000, "Eliminate"),
-        new Risk("Задержка поставки оборудования", 0.3, 15, 7000, "Mitigate"),
-        new Risk("Неправильное планирование", 0.5, 20, 15000, "Mitigate"),
-        new Risk("Кибератака", 0.2, 15, 20000, "Eliminate")
+        new Risk("Задержка в разработке", 0.4, 10, 5000, "Mitigate", "Технические"),
+        new Risk("Отсутствие сотрудников", 0.3, 30, 10000, "Eliminate", "Организационные"),
+        new Risk("Задержка поставки оборудования", 0.3, 15, 7000, "Mitigate", "Внешние"),
+        new Risk("Неправильное планирование", 0.5, 20, 15000, "Mitigate", "Организационные"),
+        new Risk("Кибератака", 0.2, 15, 20000, "Eliminate", "Технические")
     );
 
     public ServerManager() {
         try {
             Class.forName("org.postgresql.Driver");
             dbConnection = DriverManager.getConnection(DB_URL, DB_USER, DB_PASSWORD);
-            System.out.println("Connected to PostgreSQL successfully.");
-        } catch (Exception e) {
-            System.out.println("Error connecting to PostgreSQL: " + e.getMessage());
+            System.out.println("Connected to PostgreSQL successfully using java.sql.DriverManager.");
+        } catch (ClassNotFoundException e) {
+            System.err.println("PostgreSQL JDBC Driver not found: " + e.getMessage());
+            e.printStackTrace();
+        } catch (SQLException e) {
+            System.err.println("Error connecting to PostgreSQL: " + e.getMessage());
             e.printStackTrace();
         }
     }
 
-    public List<Risk> getTypicalRisks() { return typicalRisks; }
+    private String runPythonCommand(String[] command) throws IOException, InterruptedException {
+        System.out.println("Запуск команды: " + String.join(" ", command));
+        ProcessBuilder pb = new ProcessBuilder(command);
+        pb.directory(new java.io.File(PYTHON_SERVER_DIR));
+        pb.redirectErrorStream(true);
+        Process process = pb.start();
+        String output = new java.io.BufferedReader(
+            new java.io.InputStreamReader(process.getInputStream())
+        ).lines().collect(Collectors.joining("\n"));
+        String error = new java.io.BufferedReader(
+            new java.io.InputStreamReader(process.getErrorStream())
+        ).lines().collect(Collectors.joining("\n"));
+        int exitCode = process.waitFor();
+        System.out.println("Вывод Python: " + output);
+        System.out.println("Ошибка Python (stderr): " + error);
+        if (exitCode != 0) {
+            throw new IOException("Python script failed with exit code " + exitCode + ": " + error + " | Output: " + output);
+        }
+        return output;
+    }
+
+    private Process startPythonServer() throws IOException {
+        ProcessBuilder pb = new ProcessBuilder(PYTHON_PATH, "-m", "http.server", "8000");
+        pb.directory(new java.io.File(PYTHON_SERVER_DIR));
+        pb.redirectErrorStream(true);
+        Process process = pb.start();
+
+        new Thread(() -> {
+            try (java.io.BufferedReader reader = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(process.getInputStream()))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    System.out.println("Python Server: " + line);
+                }
+            } catch (IOException e) {
+                System.err.println("Error reading Python server output: " + e.getMessage());
+            }
+        }).start();
+
+        System.out.println("Python HTTP Server started on port 8000 in directory: " + PYTHON_SERVER_DIR);
+        return process;
+    }
 
     public void startServer() {
+        Process pythonProcess = null;
         try {
-            // Запуск Python HTTP-сервера
-            String workingDirectory = "C:/Users/dmitr/Models";
-            ProcessBuilder pb = new ProcessBuilder("python", "-m", "http.server", "8000");
-            pb.directory(new java.io.File(workingDirectory));
-            pb.redirectErrorStream(true);
-            Process process = pb.start();
+            pythonProcess = startPythonServer();
 
-            // Читаем вывод Python-сервера для отладки
-            new Thread(() -> {
-                try (java.io.BufferedReader reader = new java.io.BufferedReader(
-                        new java.io.InputStreamReader(process.getInputStream()))) {
-                    String line;
-                    while ((line = reader.readLine()) != null) {
-                        System.out.println("Python Server: " + line);
-                    }
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-            }).start();
-
-            System.out.println("Python HTTP Server started on port 8000");
-
-            // Запуск Jetty-сервера
-            Server server = new Server(8080);
+            Server server = new Server(8089);
             ServletContextHandler context = new ServletContextHandler(ServletContextHandler.SESSIONS);
             context.setContextPath("/");
             server.setHandler(context);
-
-            // Настройка CORS
-            configureCORS(context);
 
             context.addServlet(new ServletHolder(new CreateModelServlet()), "/create");
             context.addServlet(new ServletHolder(new AddRiskServlet()), "/addRisk");
@@ -411,144 +502,459 @@ public class ServerManager {
             context.addServlet(new ServletHolder(new RunServlet()), "/run");
             context.addServlet(new ServletHolder(new ResultsServlet()), "/results");
             context.addServlet(new ServletHolder(new GetTypicalRisksServlet()), "/typicalRisks");
-            context.addServlet(new ServletHolder(new ExportServlet()), "/export");
+            context.addServlet(new ServletHolder(new ExportDashboardServlet()), "/exportDashboard");
+            context.addServlet(new ServletHolder(new RiskLogsServlet()), "/riskLogs");
+            context.addServlet(new ServletHolder(new UpdateProgressServlet()), "/updateProgress");
+            context.addServlet(new ServletHolder(new LoadLatestDataServlet()), "/loadLatestData");
 
             server.start();
-            System.out.println("Jetty Server started on port 8080");
+            System.out.println("Jetty Server started on port 8089");
+            server.join();
         } catch (Exception e) {
-            System.out.println("Error starting servers: " + e.getMessage());
+            System.err.println("Error starting servers: " + e.getMessage());
             e.printStackTrace();
+            if (pythonProcess != null) {
+                pythonProcess.destroy();
+            }
         }
     }
+    
+    class LoadLatestDataServlet extends HttpServlet {
+        @Override
+        protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws IOException {
+            addCorsHeaders(resp);
+            try {
+                Connection localConnection = null;
+                try {
+                    localConnection = DriverManager.getConnection(DB_URL, DB_USER, DB_PASSWORD);
+                    
+                    // Получаем этапы
+                    PreparedStatement stageStmt = localConnection.prepareStatement(
+                    	    "SELECT name, duration, cost, dependencies, actual_duration, actual_cost " +
+                    	    "FROM stages " +
+                    	    "ORDER BY id ASC"
+                    	);
+                    	java.sql.ResultSet stageRs = stageStmt.executeQuery();
+                    	List<Stage> loadedStages = new ArrayList<>();
+                    	Gson gson = new Gson();
+                    	System.out.println("Загрузка этапов из базы данных...");
+                    	while (stageRs.next()) {
+                    	    Stage stage = new Stage();
+                    	    stage.name = stageRs.getString("name");
+                    	    stage.duration = stageRs.getDouble("duration");
+                    	    stage.cost = stageRs.getDouble("cost");
+                    	    String dependenciesJson = stageRs.getString("dependencies");
+                    	    stage.dependencies = gson.fromJson(dependenciesJson, new TypeToken<List<String>>(){}.getType());
+                    	    stage.actualDuration = stageRs.getDouble("actual_duration");
+                    	    stage.actualCost = stageRs.getDouble("actual_cost");
+                    	    stage.computeVariations();
+                    	    loadedStages.add(stage);
+                    	    System.out.println("Загружен этап: " + stage.name + ", duration: " + stage.duration + ", cost: " + stage.cost);
+                    	}
+                    	stageRs.close();
+                    	stageStmt.close();
+                    	System.out.println("Всего загружено этапов: " + loadedStages.size());
 
-    // Метод для настройки CORS
-    private void configureCORS(ServletContextHandler context) {
-        FilterHolder corsFilter = new FilterHolder(new CrossOriginFilter());
-        corsFilter.setInitParameter(CrossOriginFilter.ALLOWED_ORIGINS_PARAM, "http://localhost:8000");
-        corsFilter.setInitParameter(CrossOriginFilter.ALLOWED_METHODS_PARAM, "GET,POST,PUT,DELETE,OPTIONS");
-        corsFilter.setInitParameter(CrossOriginFilter.ALLOWED_HEADERS_PARAM, "Content-Type,Authorization");
-        corsFilter.setInitParameter(CrossOriginFilter.ALLOW_CREDENTIALS_PARAM, "true");
-        corsFilter.setInitParameter(CrossOriginFilter.CHAIN_PREFLIGHT_PARAM, "false");
-        context.addFilter(corsFilter, "/*", EnumSet.of(DispatcherType.REQUEST));
+                    // Получаем риски
+                    PreparedStatement riskStmt = localConnection.prepareStatement(
+                        "SELECT name, probability, impact_time, impact_cost, mitigated, strategy, category, priority " +
+                        "FROM risks " +
+                        "ORDER BY id DESC"
+                    );
+                    java.sql.ResultSet riskRs = riskStmt.executeQuery(); // Явно указываем java.sql.ResultSet
+                    List<Risk> loadedRisks = new ArrayList<>();
+                    
+                    while (riskRs.next()) {
+                        Risk risk = new Risk();
+                        risk.name = riskRs.getString("name");
+                        risk.probability = riskRs.getDouble("probability");
+                        risk.impactTime = riskRs.getDouble("impact_time");
+                        risk.impactCost = riskRs.getDouble("impact_cost");
+                        risk.mitigated = riskRs.getBoolean("mitigated");
+                        risk.strategy = riskRs.getString("strategy");
+                        risk.category = riskRs.getString("category");
+                        risk.priority = riskRs.getDouble("priority");
+                        risk.computeVariations();
+                        loadedRisks.add(risk);
+                    }
+                    riskRs.close();
+                    riskStmt.close();
+
+                    // Формируем ответ
+                    Map<String, Object> responseData = new HashMap<>();
+                    responseData.put("stages", loadedStages);
+                    responseData.put("risks", loadedRisks);
+
+                    resp.setContentType("application/json");
+                    resp.getWriter().write(gson.toJson(responseData));
+                    
+                } finally {
+                    if (localConnection != null) {
+                        try {
+                            localConnection.close();
+                        } catch (SQLException e) {
+                            System.err.println("Error closing connection: " + e.getMessage());
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                System.err.println("Ошибка в LoadLatestDataServlet: " + e.getMessage());
+                e.printStackTrace();
+                resp.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Ошибка загрузки данных: " + e.getMessage());
+            }
+        }
+
+        @Override
+        protected void doOptions(HttpServletRequest req, HttpServletResponse resp) throws IOException {
+            addCorsHeaders(resp);
+            resp.setStatus(HttpServletResponse.SC_OK);
+        }
     }
-
+    
     class CreateModelServlet extends HttpServlet {
         @Override
         protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws IOException {
-            String json = req.getReader().lines().reduce("", (a, b) -> a + b);
-            Gson gson = new Gson();
-            List<Stage> inputStages = gson.fromJson(json, new TypeToken<List<Stage>>(){}.getType());
-            if (inputStages != null && !inputStages.isEmpty()) {
-                stages.addAll(inputStages);
-                totalTime = stages.stream().mapToDouble(s -> s.duration).sum();
-                totalCost = stages.stream().mapToDouble(s -> s.cost).sum();
+            addCorsHeaders(resp);
+            try {
+                String json = req.getReader().lines().reduce("", (a, b) -> a + b);
+                System.out.println("Полученный JSON: " + json);
+                Gson gson = new Gson();
+                ModelData modelData = gson.fromJson(json, ModelData.class);
+
+                stages.clear();
+                risks.clear();
+                timeResults.clear();
+                costResults.clear();
+                criticalStages.clear();
+                criticalRisks.clear();
+                contingencyReserveUsed = 0;
+
+                // Прямо добавляем списки, так как modelData.stages и modelData.risks уже являются List<Stage> и List<Risk>
+                stages.addAll(modelData.stages != null ? modelData.stages : new ArrayList<>());
+                risks.addAll(modelData.risks != null ? modelData.risks : new ArrayList<>());
+
+                // Логируем количество загруженных этапов и рисков
+                System.out.println("Загружено этапов: " + stages.size());
+                System.out.println("Загружено рисков: " + risks.size());
+
+                // Вызываем computeVariations для всех этапов и рисков после десериализации
+                for (Stage stage : stages) {
+                    stage.computeVariations();
+                }
+                for (Risk risk : risks) {
+                    risk.computeVariations();
+                }
+
+                timeThreshold = modelData.timeThreshold;
+                costThreshold = modelData.costThreshold;
+                targetTime = modelData.targetTime;
+                targetCost = modelData.targetCost;
+
+                // Синхронизируем mitigation_strategy с тем, что указано в рисках
+                if (!risks.isEmpty()) {
+                    mitigationStrategy = risks.get(0).strategy; // Берем стратегию из первого риска
+                } else {
+                    mitigationStrategy = "Mitigate"; // Значение по умолчанию
+                }
+
+                System.out.println("Starting PERT simulation...");
+                runPertSimulation();
+                System.out.println("PERT simulation completed.");
                 uploadToPostgreSQL();
-                resp.getWriter().write("Модель создана с " + stages.size() + " этапами");
-            } else {
-                resp.sendError(HttpServletResponse.SC_BAD_REQUEST, "Некорректные данные этапов");
+
+                resp.getWriter().write("Модель успешно создана");
+            } catch (Exception e) {
+                resp.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Ошибка создания модели: " + e.getMessage());
             }
         }
-    }
 
+        @Override
+        protected void doOptions(HttpServletRequest req, HttpServletResponse resp) throws IOException {
+            addCorsHeaders(resp);
+            resp.setStatus(HttpServletResponse.SC_OK);
+        }
+    }
+    
     class AddRiskServlet extends HttpServlet {
         @Override
         protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws IOException {
-            String json = req.getReader().lines().reduce("", (a, b) -> a + b);
-            Gson gson = new Gson();
-            Risk risk = gson.fromJson(json, Risk.class);
-            if (risk != null && risk.name != null && !risk.name.isEmpty() && 
-                !Double.isNaN(risk.probability) && !Double.isNaN(risk.impactTime) && !Double.isNaN(risk.impactCost)) {
-                if (risk.strategy == null || risk.strategy.isEmpty()) {
-                    risk.strategy = "Ignore";
+            addCorsHeaders(resp);
+            try {
+                String json = req.getReader().lines().reduce("", (a, b) -> a + b);
+                Gson gson = new Gson();
+                Risk risk = gson.fromJson(json, Risk.class);
+                if (risk != null && risk.name != null && !risk.name.isEmpty()) {
+                    if (risks.stream().noneMatch(r -> r.name.equals(risk.name))) {
+                        risk.computeVariations();
+                        risks.add(risk);
+                        uploadToPostgreSQL();
+                        logRiskAction(risk.name, "Добавлен", "Добавлен риск с приоритетом " + risk.priority);
+                        resp.getWriter().write("Риск добавлен: " + risk.name);
+                    } else {
+                        resp.getWriter().write("Риск с именем " + risk.name + " уже существует.");
+                        System.out.println("Риск с именем " + risk.name + " уже существует, пропускаем добавление.");
+                    }
+                } else {
+                    resp.sendError(HttpServletResponse.SC_BAD_REQUEST, "Некорректные данные риска");
                 }
-                risks.add(risk);
-                uploadToPostgreSQL();
-                resp.getWriter().write("Риск добавлен: " + risk.name);
-            } else {
-                resp.sendError(HttpServletResponse.SC_BAD_REQUEST, "Некорректные данные риска");
+            } catch (Exception e) {
+                resp.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Ошибка добавления риска: " + e.getMessage());
             }
+        }
+
+        @Override
+        protected void doOptions(HttpServletRequest req, HttpServletResponse resp) throws IOException {
+            addCorsHeaders(resp);
+            resp.setStatus(HttpServletResponse.SC_OK);
         }
     }
 
     class SetMitigationServlet extends HttpServlet {
         @Override
         protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws IOException {
-            String json = req.getReader().lines().reduce("", (a, b) -> a + b);
-            Gson gson = new Gson();
-            Mitigation mitigation = gson.fromJson(json, Mitigation.class);
-            mitigationStrategy = mitigation.strategy;
-            mitigationBudget = mitigation.budget;
-            uploadToPostgreSQL();
-            resp.getWriter().write("Стратегия установлена: " + mitigationStrategy);
+            addCorsHeaders(resp);
+            try {
+                String json = req.getReader().lines().reduce("", (a, b) -> a + b);
+                Gson gson = new Gson();
+                Mitigation mitigation = gson.fromJson(json, Mitigation.class);
+                if (mitigation != null && mitigation.strategy != null && !mitigation.strategy.isEmpty()) {
+                    mitigationStrategy = mitigation.strategy;
+                    mitigationBudget = mitigation.budget;
+                    
+                    resp.getWriter().write("Стратегия установлена: " + mitigationStrategy);
+                } else {
+                    resp.sendError(HttpServletResponse.SC_BAD_REQUEST, "Некорректные данные стратегии");
+                }
+            } catch (Exception e) {
+                resp.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Ошибка установки стратегии: " + e.getMessage());
+            }
+        }
+
+        @Override
+        protected void doOptions(HttpServletRequest req, HttpServletResponse resp) throws IOException {
+            addCorsHeaders(resp);
+            resp.setStatus(HttpServletResponse.SC_OK);
         }
     }
 
     class RunServlet extends HttpServlet {
         @Override
         protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws IOException {
-            double mitigationCost = 0;
-            for (Risk risk : risks) {
-                if (Math.random() < risk.probability) {
-                    if ("Mitigate".equals(risk.strategy) && mitigationBudget >= 500) {
-                        totalTime += risk.impactTime * 0.5;
-                        totalCost += risk.impactCost * 0.5;
-                        mitigationCost += 500;
-                        risk.mitigated = true;
-                        mitigationBudget -= 500;
-                    } else if ("Eliminate".equals(risk.strategy) && mitigationBudget >= 2000) {
-                        totalTime += 5;
-                        totalCost += risk.impactCost;
-                        mitigationCost += 2000;
-                        risk.mitigated = true;
-                        mitigationBudget -= 2000;
-                    } else {
-                        totalTime += risk.impactTime;
-                        totalCost += risk.impactCost;
-                    }
-                }
+            addCorsHeaders(resp);
+            try {
+                runPertSimulation();
+                uploadToPostgreSQL();
+                resp.getWriter().write("Симуляция завершена.");
+            } catch (Exception e) {
+                resp.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Ошибка симуляции: " + e.getMessage());
             }
-            totalCost += mitigationCost;
-            uploadToPostgreSQL();
-            resp.getWriter().write("Симуляция завершена. Стоимость управления: $" + mitigationCost);
+        }
+
+        @Override
+        protected void doOptions(HttpServletRequest req, HttpServletResponse resp) throws IOException {
+            addCorsHeaders(resp);
+            resp.setStatus(HttpServletResponse.SC_OK);
         }
     }
 
     class ResultsServlet extends HttpServlet {
         @Override
         protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws IOException {
-            Gson gson = new Gson();
-            String json = gson.toJson(new Results(totalTime, totalCost, risks));
-            resp.setContentType("application/json");
-            resp.getWriter().write(json);
+            addCorsHeaders(resp);
+            try {
+                Gson gson = new Gson();
+                String json = gson.toJson(new Results(totalTime, totalCost, risks));
+                resp.setContentType("application/json");
+                resp.getWriter().write(json);
+            } catch (Exception e) {
+                resp.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Ошибка получения результатов: " + e.getMessage());
+            }
+        }
+
+        @Override
+        protected void doOptions(HttpServletRequest req, HttpServletResponse resp) throws IOException {
+            addCorsHeaders(resp);
+            resp.setStatus(HttpServletResponse.SC_OK);
         }
     }
 
     class GetTypicalRisksServlet extends HttpServlet {
         @Override
         protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws IOException {
-            Gson gson = new Gson();
-            String json = gson.toJson(typicalRisks);
-            resp.setContentType("application/json");
-            resp.getWriter().write(json);
+            addCorsHeaders(resp);
+            try {
+                Gson gson = new Gson();
+                String json = gson.toJson(typicalRisks);
+                resp.setContentType("application/json");
+                resp.getWriter().write(json);
+            } catch (Exception e) {
+                resp.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Ошибка получения типичных рисков: " + e.getMessage());
+            }
+        }
+
+        @Override
+        protected void doOptions(HttpServletRequest req, HttpServletResponse resp) throws IOException {
+            addCorsHeaders(resp);
+            resp.setStatus(HttpServletResponse.SC_OK);
         }
     }
 
-    class ExportServlet extends HttpServlet {
+    class ExportDashboardServlet extends HttpServlet {
         @Override
         protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws IOException {
-            Gson gson = new Gson();
-            ExportData exportData = new ExportData(totalTime, totalCost, new ArrayList<>(stages), new ArrayList<>(risks), mitigationStrategy, mitigationBudget);
-            String json = gson.toJson(exportData);
-            resp.setContentType("application/json");
-            resp.getWriter().write(json);
+            addCorsHeaders(resp);
+            try {
+                System.out.println("Начинаем экспорт метрик...");
+                for (Risk risk : risks) {
+                    risk.mitigated = false;
+                }
+                contingencyReserveUsed = 0;
+                runPertSimulation();
+                uploadToPostgreSQL();
+                String[] metricsCmd = {PYTHON_PATH, SUPERSET_CLI_PATH, "export_metrics"};
+                String metricsJson = runPythonCommand(metricsCmd);
+                System.out.println("Метрики экспортированы: " + metricsJson);
+
+                String[] risksCmd = {PYTHON_PATH, SUPERSET_CLI_PATH, "export_risks"};
+                String risksJson = runPythonCommand(risksCmd);
+                System.out.println("Риски экспортированы: " + risksJson);
+
+                Gson gson = new Gson();
+                Object metrics = gson.fromJson(metricsJson, Object.class);
+                List<Risk> risksData = gson.fromJson(risksJson, new TypeToken<List<Risk>>(){}.getType());
+
+                if (metrics == null || risksData == null) {
+                    throw new Exception("Ошибка экспорта: метрики или риски null");
+                }
+
+                Map<String, Object> dashboardDataMap = new HashMap<>();
+                dashboardDataMap.put("timeResults", timeResults);
+                dashboardDataMap.put("costResults", costResults);
+                dashboardDataMap.put("time90thPercentile", time90thPercentile);
+                dashboardDataMap.put("cost90thPercentile", cost90thPercentile);
+                dashboardDataMap.put("timeThreshold", timeThreshold);
+                dashboardDataMap.put("costThreshold", costThreshold);
+                dashboardDataMap.put("timeExceedProbability", timeExceedProbability);
+                dashboardDataMap.put("costExceedProbability", costExceedProbability);
+                dashboardDataMap.put("timeStdDev", timeStdDev);
+                dashboardDataMap.put("costStdDev", costStdDev);
+                dashboardDataMap.put("timeConfidenceLower", timeConfidenceLower);
+                dashboardDataMap.put("timeConfidenceUpper", timeConfidenceUpper);
+                dashboardDataMap.put("costConfidenceLower", costConfidenceLower);
+                dashboardDataMap.put("costConfidenceUpper", costConfidenceUpper);
+                dashboardDataMap.put("targetTime", targetTime);
+                dashboardDataMap.put("targetCost", targetCost);
+                dashboardDataMap.put("timeTargetProbability", timeTargetProbability);
+                dashboardDataMap.put("costTargetProbability", costTargetProbability);
+                dashboardDataMap.put("criticalRisks", criticalRisks);
+                dashboardDataMap.put("criticalStages", criticalStages);
+                dashboardDataMap.put("contingencyReserve", contingencyReserve);
+                dashboardDataMap.put("contingencyReserveUsed", contingencyReserveUsed);
+                dashboardDataMap.put("baseCost", baseCost);
+                dashboardDataMap.put("scheduleVariance", scheduleVariance);
+                dashboardDataMap.put("costVariance", costVariance);
+                dashboardDataMap.put("remainingMitigationBudget", remainingMitigationBudget);
+                dashboardDataMap.put("criticalStageRecommendations", criticalStageRecommendations); // Добавляем рекомендации
+
+                String dashboardData = gson.toJson(dashboardDataMap);
+
+                resp.setContentType("application/json");
+                resp.getWriter().write(gson.toJson(new DashboardData(metrics, risksData, dashboardData)));
+            } catch (Exception e) {
+                System.err.println("Ошибка в ExportDashboardServlet: " + e.getMessage());
+                e.printStackTrace();
+                resp.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Ошибка экспорта: " + e.getMessage());
+            }
         }
+
+        @Override
+        protected void doOptions(HttpServletRequest req, HttpServletResponse resp) throws IOException {
+            addCorsHeaders(resp);
+            resp.setStatus(HttpServletResponse.SC_OK);
+        }
+    }
+
+    class RiskLogsServlet extends HttpServlet {
+        @Override
+        protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws IOException {
+            addCorsHeaders(resp);
+            try {
+                Gson gson = new Gson();
+                String response = gson.toJson(riskLogs);
+                resp.setContentType("application/json");
+                resp.getWriter().write(response);
+            } catch (Exception e) {
+                System.err.println("Ошибка в RiskLogsServlet: " + e.getMessage());
+                e.printStackTrace();
+                resp.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Ошибка получения логов: " + e.getMessage());
+            }
+        }
+
+        @Override
+        protected void doOptions(HttpServletRequest req, HttpServletResponse resp) throws IOException {
+            addCorsHeaders(resp);
+            resp.setStatus(HttpServletResponse.SC_OK);
+        }
+    }
+
+    class UpdateProgressServlet extends HttpServlet {
+        @Override
+        protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws IOException {
+            addCorsHeaders(resp);
+            try {
+                String json = req.getReader().lines().reduce("", (a, b) -> a + b);
+                System.out.println("Полученный JSON для обновления: " + json);
+                Gson gson = new Gson();
+                ProgressUpdate update = gson.fromJson(json, ProgressUpdate.class);
+
+                if (update != null && update.stageUpdates != null && !update.stageUpdates.isEmpty()) {
+                    for (StageUpdate stageUpdate : update.stageUpdates) {
+                        for (Stage stage : stages) {
+                            if (stage.name.equals(stageUpdate.name)) {
+                                stage.actualDuration = stageUpdate.actualDuration;
+                                stage.actualCost = stageUpdate.actualCost;
+                                System.out.println("Обновлен этап: " + stage.name +
+                                        ", Фактическая длительность: " + stage.actualDuration +
+                                        ", Фактическая стоимость: " + stage.actualCost);
+                                break;
+                            }
+                        }
+                    }
+
+                    // Пересчитываем симуляцию с учетом новых данных
+                    runPertSimulation();
+
+                    // Сохраняем обновленные данные в базу
+                    uploadToPostgreSQL();
+                    resp.getWriter().write("Прогресс обновлен. Отклонение по времени: " + scheduleVariance +
+                            " дней, Отклонение по стоимости: $" + costVariance);
+                } else {
+                    resp.sendError(HttpServletResponse.SC_BAD_REQUEST, "Некорректные данные для обновления");
+                }
+            } catch (Exception e) {
+                resp.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Ошибка обновления прогресса: " + e.getMessage());
+            }
+        }
+
+        @Override
+        protected void doOptions(HttpServletRequest req, HttpServletResponse resp) throws IOException {
+            addCorsHeaders(resp);
+            resp.setStatus(HttpServletResponse.SC_OK);
+        }
+    }
+
+    private void addCorsHeaders(HttpServletResponse resp) {
+        resp.setHeader("Access-Control-Allow-Origin", "http://localhost:8000");
+        resp.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+        resp.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, Accept, Accept-Language, Content-Language, X-Requested-With");
+        resp.setHeader("Access-Control-Allow-Credentials", "true");
+        resp.setHeader("Access-Control-Max-Age", "86400");
+        resp.setContentType("text/plain; charset=UTF-8");
     }
 
     class Results {
-        double totalTime;
-        double totalCost;
+        double totalTime, totalCost;
         List<Risk> risks;
-
         Results(double totalTime, double totalCost, List<Risk> risks) {
             this.totalTime = totalTime;
             this.totalCost = totalCost;
@@ -556,65 +962,562 @@ public class ServerManager {
         }
     }
 
-    class ExportData {
-        double totalTime;
-        double totalCost;
-        List<Stage> stages;
+    class DashboardData {
+        Object metrics;
         List<Risk> risks;
-        String mitigationStrategy;
-        double mitigationBudget;
-
-        ExportData(double totalTime, double totalCost, List<Stage> stages, List<Risk> risks, String mitigationStrategy, double mitigationBudget) {
-            this.totalTime = totalTime;
-            this.totalCost = totalCost;
-            this.stages = stages;
+        String dashboardData;
+        DashboardData(Object metrics, List<Risk> risks, String dashboardData) {
+            this.metrics = metrics;
             this.risks = risks;
-            this.mitigationStrategy = mitigationStrategy;
-            this.mitigationBudget = mitigationBudget;
+            this.dashboardData = dashboardData;
+        }
+    }
+
+    private void runPertSimulation() {
+        timeResults.clear();
+        costResults.clear();
+        criticalRisks.clear();
+        criticalStages.clear();
+        criticalStageRecommendations.clear(); // Очищаем рекомендации перед новой симуляцией
+
+        final int ITERATIONS = 10000;
+        Random random = new Random();
+
+        // Константы для порогов
+        final double CRITICAL_STAGE_THRESHOLD = 0.3; // 30% от общего времени или стоимости
+        final double UNCERTAINTY_THRESHOLD = 0.5;    // Неопределённость > 50%
+        final double CRITICAL_RISK_THRESHOLD = 0.1;  // 10% от целевого времени или стоимости
+
+        // Рассчитываем базовую стоимость проекта (без учета рисков)
+        baseCost = 0.0;
+        for (Stage stage : stages) {
+            double stageCostExpected = stage.actualCost > 0 ? stage.actualCost :
+                    (stage.costOptimistic + 4 * stage.cost + stage.costPessimistic) / 6.0;
+            baseCost += stageCostExpected;
+        }
+
+        // Инициализируем остаток бюджета на управление рисками
+        remainingMitigationBudget = mitigationBudget;
+        contingencyReserveUsed = 0;
+
+        // Устанавливаем глобальную стратегию по умолчанию, если не задана
+        String globalStrategy = mitigationStrategy != null && !mitigationStrategy.isEmpty() ? mitigationStrategy : "Monitor";
+
+        System.out.println("Starting PERT simulation with " + ITERATIONS + " iterations...");
+        System.out.println("Number of stages: " + stages.size());
+        System.out.println("Number of risks: " + risks.size());
+        System.out.println("Mitigation budget: " + mitigationBudget);
+        System.out.println("Global mitigation strategy: " + globalStrategy);
+        System.out.println("Base cost: " + baseCost);
+
+        // Обрабатываем риски перед симуляцией
+        for (Risk risk : risks) {
+            risk.priority = risk.probability * (risk.impactTime + risk.impactCost / 1000.0);
+            System.out.println("Risk: " + risk.name + ", Priority: " + risk.priority);
+
+            // Определяем стратегию: индивидуальная имеет приоритет, иначе глобальная
+            String effectiveStrategy = (risk.strategy != null && !risk.strategy.isEmpty() && !"Ignore".equalsIgnoreCase(risk.strategy)) 
+                    ? risk.strategy 
+                    : globalStrategy;
+
+            if (!risk.mitigated) {
+                if ("Mitigate".equalsIgnoreCase(effectiveStrategy) && remainingMitigationBudget >= 500) {
+                    remainingMitigationBudget -= 500;
+                    risk.mitigationCost = 500;
+                    risk.mitigated = true;
+                    risk.strategy = "Mitigate"; // Обновляем стратегию для консистентности
+                    logRiskAction(risk.name, "Смягчён", "Риск смягчён за $500 (стратегия: " + effectiveStrategy + ")");
+                    System.out.println("Risk " + risk.name + " mitigated (Mitigate) for $500");
+                } else if ("Eliminate".equalsIgnoreCase(effectiveStrategy) && remainingMitigationBudget >= 2000) {
+                    remainingMitigationBudget -= 2000;
+                    risk.mitigationCost = 2000;
+                    risk.mitigated = true;
+                    risk.strategy = "Eliminate"; // Обновляем стратегию для консистентности
+                    logRiskAction(risk.name, "Устранён", "Риск устранён за $2000 (стратегия: " + effectiveStrategy + ")");
+                    System.out.println("Risk " + risk.name + " mitigated (Eliminate) for $2000");
+                } else if (risk.priority > 10 && remainingMitigationBudget >= 500) {
+                    remainingMitigationBudget -= 500;
+                    risk.mitigationCost = 500;
+                    risk.strategy = "Mitigate";
+                    risk.mitigated = true;
+                    logRiskAction(risk.name, "Автосмягчение", "Риск с высоким приоритетом автоматически смягчён за $500");
+                    System.out.println("Risk " + risk.name + " auto-mitigated due to high priority for $500");
+                } else if (risk.priority > 5) {
+                    risk.strategy = "Monitor";
+                    risk.mitigationCost = 0.0;
+                    System.out.println("Risk " + risk.name + " set to Monitor");
+                } else {
+                    risk.strategy = "Ignore";
+                    risk.mitigationCost = 0.0;
+                    System.out.println("Risk " + risk.name + " set to Ignore");
+                }
+            }
+        }
+
+        // Симуляция Монте-Карло
+        for (int iter = 0; iter < ITERATIONS; iter++) {
+            double totalTimeIter = calculateCriticalPathForIteration(random);
+            double totalCostIter = 0.0;
+            double riskTimeImpactIter = 0.0;
+            double riskCostImpactIter = 0.0;
+
+            // Учитываем стоимость этапов
+            for (Stage stage : stages) {
+                double stageCostIter = stage.actualCost > 0 ? stage.actualCost :
+                        ((stage.costOptimistic + 4 * stage.cost + stage.costPessimistic) / 6.0 +
+                                (stage.costPessimistic - stage.costOptimistic) / 6.0 * random.nextGaussian());
+                stageCostIter = Math.max(stage.costOptimistic, Math.min(stageCostIter, stage.costPessimistic));
+                totalCostIter += stageCostIter;
+            }
+
+            // Учитываем влияние рисков
+            for (Risk risk : risks) {
+                boolean riskTriggered = random.nextDouble() < risk.probability;
+                if (riskTriggered) {
+                    double riskTimeIter = (risk.impactTimeOptimistic + 4 * risk.impactTime + risk.impactTimePessimistic) / 6.0;
+                    double riskCostIter = (risk.impactCostOptimistic + 4 * risk.impactCost + risk.impactCostPessimistic) / 6.0;
+
+                    double riskTimeStdDev = (risk.impactTimePessimistic - risk.impactTimeOptimistic) / 6.0;
+                    double riskCostStdDev = (risk.impactCostPessimistic - risk.impactCostOptimistic) / 6.0;
+
+                    riskTimeIter = riskTimeIter + riskTimeStdDev * random.nextGaussian();
+                    riskCostIter = riskCostIter + riskCostStdDev * random.nextGaussian();
+
+                    riskTimeIter = Math.max(risk.impactTimeOptimistic, Math.min(riskTimeIter, risk.impactTimePessimistic));
+                    riskCostIter = Math.max(risk.impactCostOptimistic, Math.min(riskCostIter, risk.impactCostPessimistic));
+
+                    System.out.println("Risk " + risk.name + " triggered: Initial Time Impact = " + riskTimeIter + 
+                                      ", Initial Cost Impact = " + riskCostIter);
+
+                    if (risk.mitigated) {
+                        if ("Mitigate".equalsIgnoreCase(risk.strategy)) {
+                            riskTimeIter *= 0.5;
+                            riskCostIter *= 0.5;
+                            System.out.println("Risk " + risk.name + " mitigated (Mitigate): Reduced Time Impact = " + riskTimeIter + 
+                                              ", Reduced Cost Impact = " + riskCostIter);
+                        } else if ("Eliminate".equalsIgnoreCase(risk.strategy)) {
+                            riskTimeIter = 5.0;
+                            riskCostIter = 0.0;
+                            System.out.println("Risk " + risk.name + " mitigated (Eliminate): Fixed Time Impact = " + riskTimeIter + 
+                                              ", Cost Impact = " + riskCostIter);
+                        }
+                    } else if (contingencyReserveUsed < contingencyReserve) {
+                        double costToCover = Math.min(riskCostIter, contingencyReserve - contingencyReserveUsed);
+                        contingencyReserveUsed += costToCover;
+                        riskCostIter -= costToCover;
+                        logRiskAction(risk.name, "Покрыт резервом", "Использовано $" + costToCover + " из резерва");
+                        System.out.println("Risk " + risk.name + " covered by contingency reserve: $" + costToCover + 
+                                          ", Remaining Cost Impact = " + riskCostIter);
+                    }
+
+                    riskTimeImpactIter += riskTimeIter;
+                    riskCostImpactIter += riskCostIter;
+                }
+            }
+
+            totalTimeIter += riskTimeImpactIter;
+            totalCostIter += riskCostImpactIter + (mitigationBudget - remainingMitigationBudget);
+
+            timeResults.add(totalTimeIter);
+            costResults.add(totalCostIter);
+        }
+
+        // Рассчитываем средние значения и остальные метрики
+        totalTime = timeResults.stream().mapToDouble(Double::doubleValue).average().orElse(0.0);
+        totalCost = costResults.stream().mapToDouble(Double::doubleValue).average().orElse(0.0);
+
+        double timeMean = totalTime;
+        double costMean = totalCost;
+        double timeVariance = timeResults.stream().mapToDouble(t -> Math.pow(t - timeMean, 2)).average().orElse(0.0);
+        double costVarianceCalc = costResults.stream().mapToDouble(c -> Math.pow(c - costMean, 2)).average().orElse(0.0);
+        timeStdDev = Math.sqrt(timeVariance);
+        costStdDev = Math.sqrt(costVarianceCalc);
+
+        timeConfidenceLower = totalTime - 1.96 * timeStdDev;
+        timeConfidenceUpper = totalTime + 1.96 * timeStdDev;
+        costConfidenceLower = totalCost - 1.96 * costStdDev;
+        costConfidenceUpper = totalCost + 1.96 * costStdDev;
+
+        List<Double> sortedTimeResults = new ArrayList<>(timeResults);
+        List<Double> sortedCostResults = new ArrayList<>(costResults);
+        Collections.sort(sortedTimeResults);
+        Collections.sort(sortedCostResults);
+        int percentileIndex = (int) (0.9 * ITERATIONS);
+        time90thPercentile = sortedTimeResults.get(percentileIndex);
+        cost90thPercentile = sortedCostResults.get(percentileIndex);
+
+        timeExceedProbability = timeResults.stream().filter(t -> t > timeThreshold).count() / (double) ITERATIONS;
+        costExceedProbability = costResults.stream().filter(c -> c > costThreshold).count() / (double) ITERATIONS;
+        timeTargetProbability = timeResults.stream().filter(t -> t <= targetTime).count() / (double) ITERATIONS;
+        costTargetProbability = costResults.stream().filter(c -> c <= targetCost).count() / (double) ITERATIONS;
+
+        // Определяем критические этапы
+        double totalTimeExpected = calculateCriticalPath();
+        for (Stage stage : stages) {
+            double stageTimeExpected = stage.actualDuration > 0 ? stage.actualDuration :
+                    (stage.durationOptimistic + 4 * stage.duration + stage.durationPessimistic) / 6.0;
+            double stageCostExpected = stage.actualCost > 0 ? stage.actualCost :
+                    (stage.costOptimistic + 4 * stage.cost + stage.costPessimistic) / 6.0;
+            double timeUncertainty = stage.duration > 0 ? (stage.durationPessimistic - stage.durationOptimistic) / stage.duration : 0;
+            double costUncertainty = stage.cost > 0 ? (stage.costPessimistic - stage.costOptimistic) / stage.cost : 0;
+
+            boolean isCriticalByTime = stageTimeExpected > totalTimeExpected * CRITICAL_STAGE_THRESHOLD && timeUncertainty > UNCERTAINTY_THRESHOLD;
+            boolean isCriticalByCost = stageCostExpected > baseCost * CRITICAL_STAGE_THRESHOLD && costUncertainty > UNCERTAINTY_THRESHOLD;
+
+            if (isCriticalByTime || isCriticalByCost) {
+                criticalStages.add(stage);
+                StringBuilder reason = new StringBuilder("Этап \"" + stage.name + "\" помечен как критический по следующим причинам: ");
+                if (isCriticalByTime) {
+                    reason.append("ожидаемая длительность (")
+                          .append(String.format("%.1f", stageTimeExpected))
+                          .append(" дней) превышает порог (")
+                          .append(String.format("%.1f", totalTimeExpected * CRITICAL_STAGE_THRESHOLD))
+                          .append(" дней), а неопределённость по времени (")
+                          .append(String.format("%.2f", timeUncertainty))
+                          .append(") выше допустимого уровня (")
+                          .append(String.format("%.2f", UNCERTAINTY_THRESHOLD))
+                          .append("). ");
+                }
+                if (isCriticalByCost) {
+                    reason.append("ожидаемая стоимость ($")
+                          .append(String.format("%.0f", stageCostExpected))
+                          .append(") превышает порог ($")
+                          .append(String.format("%.0f", baseCost * CRITICAL_STAGE_THRESHOLD))
+                          .append("), а неопределённость по стоимости (")
+                          .append(String.format("%.2f", costUncertainty))
+                          .append(") выше допустимого уровня (")
+                          .append(String.format("%.2f", UNCERTAINTY_THRESHOLD))
+                          .append("). ");
+                }
+                reason.append("Рекомендуется: усилить контроль за выполнением этапа, пересмотреть оценки длительности и стоимости, а также рассмотреть возможность выделения дополнительных ресурсов.");
+                criticalStageRecommendations.add(reason.toString());
+                System.out.println("Stage " + stage.name + " marked as critical (Time: " + stageTimeExpected + 
+                                  ", Cost: " + stageCostExpected + ", Time Uncertainty: " + timeUncertainty + 
+                                  ", Cost Uncertainty: " + costUncertainty + ")");
+            }
+        }
+
+        // Определяем критические риски
+        Map<String, Double> riskTimeImpact = new HashMap<>();
+        Map<String, Double> riskCostImpact = new HashMap<>();
+        for (Risk risk : risks) {
+            double avgTimeImpact = timeResults.stream()
+                    .filter(t -> random.nextDouble() < risk.probability)
+                    .mapToDouble(t -> risk.mitigated ? risk.impactTime * 0.5 : risk.impactTime)
+                    .average().orElse(0.0);
+            double avgCostImpact = costResults.stream()
+                    .filter(c -> random.nextDouble() < risk.probability)
+                    .mapToDouble(c -> risk.mitigated ? risk.impactCost * 0.5 : risk.impactCost)
+                    .average().orElse(0.0);
+
+            if (avgTimeImpact > targetTime * CRITICAL_RISK_THRESHOLD || avgCostImpact > targetCost * CRITICAL_RISK_THRESHOLD) {
+                criticalRisks.add(risk);
+                System.out.println("Risk " + risk.name + " marked as critical (Avg Time Impact: " + avgTimeImpact + 
+                                  ", Avg Cost Impact: " + avgCostImpact + ")");
+            }
+            riskTimeImpact.put(risk.name, avgTimeImpact);
+            riskCostImpact.put(risk.name, avgCostImpact);
+        }
+
+        // Рассчитываем отклонения
+        scheduleVariance = 0.0;
+        costVariance = 0.0;
+        for (Stage stage : stages) {
+            double expectedDuration = (stage.durationOptimistic + 4 * stage.duration + stage.durationPessimistic) / 6.0;
+            double expectedCost = (stage.costOptimistic + 4 * stage.cost + stage.costPessimistic) / 6.0;
+
+            if (stage.actualDuration > 0) {
+                double durationDiff = stage.actualDuration - expectedDuration;
+                scheduleVariance += durationDiff;
+                System.out.println("Stage " + stage.name + ": Expected Duration = " + expectedDuration + 
+                                  ", Actual Duration = " + stage.actualDuration + 
+                                  ", Duration Diff = " + durationDiff);
+            }
+        }
+        costVariance = totalCost - baseCost;
+
+        System.out.println("Final Schedule Variance: " + scheduleVariance);
+        System.out.println("Final Cost Variance: " + costVariance);
+        System.out.println("Final Remaining Mitigation Budget: " + remainingMitigationBudget);
+
+        System.out.println("PERT simulation completed.");
+        System.out.println("Total Time (mean): " + totalTime + ", Total Cost (mean): " + totalCost);
+        System.out.println("Mitigation Budget Used: " + (mitigationBudget - remainingMitigationBudget));
+        System.out.println("Remaining Mitigation Budget: " + remainingMitigationBudget);
+        System.out.println("Contingency Reserve Used: " + contingencyReserveUsed);
+    }
+
+    // Вспомогательный метод для расчета критического пути в каждой итерации
+    private double calculateCriticalPathForIteration(Random random) {
+        if (stages.isEmpty()) return 0.0;
+
+        double[] earliestStart = new double[stages.size()];
+        double[] earliestFinish = new double[stages.size()];
+
+        // Прямой проход: вычисляем earliestStart и earliestFinish
+        for (int i = 0; i < stages.size(); i++) {
+            Stage stage = stages.get(i);
+            double stageTimeIter;
+
+            if (stage.actualDuration > 0) {
+                stageTimeIter = stage.actualDuration;
+            } else {
+                // Генерируем случайное значение длительности на основе бета-распределения
+                double mean = (stage.durationOptimistic + 4 * stage.duration + stage.durationPessimistic) / 6.0;
+                double stdDev = (stage.durationPessimistic - stage.durationOptimistic) / 6.0;
+                stageTimeIter = mean + stdDev * random.nextGaussian();
+                stageTimeIter = Math.max(stage.durationOptimistic, Math.min(stageTimeIter, stage.durationPessimistic));
+            }
+
+            earliestStart[i] = 0;
+
+            for (String dep : stage.dependencies) {
+                int depIndex = -1;
+                for (int j = 0; j < stages.size(); j++) {
+                    if (stages.get(j).name.equals(dep)) {
+                        depIndex = j;
+                        break;
+                    }
+                }
+                if (depIndex != -1 && depIndex < i) {
+                    earliestStart[i] = Math.max(earliestStart[i], earliestFinish[depIndex]);
+                }
+            }
+            earliestFinish[i] = earliestStart[i] + stageTimeIter;
+        }
+
+        double projectDuration = 0.0;
+        for (int i = 0; i < stages.size(); i++) {
+            if (stages.get(i).dependencies.isEmpty() || earliestFinish[i] > projectDuration) {
+                projectDuration = earliestFinish[i];
+            }
+        }
+
+        return projectDuration;
+    }
+
+    private double calculateCriticalPath() {
+        if (stages.isEmpty()) return 0.0;
+
+        double[] earliestStart = new double[stages.size()];
+        double[] earliestFinish = new double[stages.size()];
+        double[] latestStart = new double[stages.size()];
+        double[] latestFinish = new double[stages.size()];
+
+        // Прямой проход: вычисляем earliestStart и earliestFinish
+        for (int i = 0; i < stages.size(); i++) {
+            Stage stage = stages.get(i);
+            double stageTimeExpected;
+
+            // Используем фактическую длительность, если она доступна
+            if (stage.actualDuration > 0) {
+                stageTimeExpected = stage.actualDuration;
+            } else {
+                stageTimeExpected = (stage.durationOptimistic + 4 * stage.duration + stage.durationPessimistic) / 6.0;
+            }
+
+            earliestStart[i] = 0;
+
+            for (String dep : stage.dependencies) {
+                int depIndex = -1;
+                for (int j = 0; j < stages.size(); j++) {
+                    if (stages.get(j).name.equals(dep)) {
+                        depIndex = j;
+                        break;
+                    }
+                }
+                if (depIndex != -1 && depIndex < i) {
+                    earliestStart[i] = Math.max(earliestStart[i], earliestFinish[depIndex]);
+                }
+            }
+            earliestFinish[i] = earliestStart[i] + stageTimeExpected;
+        }
+
+        double projectDuration = 0.0;
+        for (int i = 0; i < stages.size(); i++) {
+            if (stages.get(i).dependencies.isEmpty() || earliestFinish[i] > projectDuration) {
+                projectDuration = earliestFinish[i];
+            }
+        }
+
+        // Обратный проход: вычисляем latestStart и latestFinish
+        for (int i = 0; i < stages.size(); i++) {
+            latestFinish[i] = projectDuration;
+        }
+
+        for (int i = stages.size() - 1; i >= 0; i--) {
+            Stage stage = stages.get(i);
+            double stageTimeExpected;
+
+            if (stage.actualDuration > 0) {
+                stageTimeExpected = stage.actualDuration;
+            } else {
+                stageTimeExpected = (stage.durationOptimistic + 4 * stage.duration + stage.durationPessimistic) / 6.0;
+            }
+
+            latestStart[i] = latestFinish[i] - stageTimeExpected;
+
+            for (int j = 0; j < stages.size(); j++) {
+                if (stages.get(j).dependencies.contains(stage.name)) {
+                    latestFinish[i] = Math.min(latestFinish[i], latestStart[j]);
+                }
+            }
+            latestStart[i] = latestFinish[i] - stageTimeExpected;
+        }
+
+        return projectDuration;
+    }
+    
+    private double erf(double z) {
+        double t = 1.0 / (1.0 + 0.5 * Math.abs(z));
+        double ans = 1 - t * Math.exp(-z * z - 1.26551223 +
+            t * (1.00002368 + t * (0.37409196 + t * (0.09678418 +
+            t * (-0.18628806 + t * (0.27886807 + t * (-1.13520398 +
+            t * (1.48851587 + t * (-0.82215223 + t * 0.17087277)))))))));
+        return z >= 0 ? ans : -ans;
+    }
+
+    private void logRiskAction(String riskName, String action, String details) {
+        riskLogs.add(new RiskLog(riskName, action, details));
+        Connection localConnection = null;
+        try {
+            localConnection = DriverManager.getConnection(DB_URL, DB_USER, DB_PASSWORD);
+            java.sql.PreparedStatement logStmt = localConnection.prepareStatement(
+                "INSERT INTO risk_logs (risk_name, action, details) VALUES (?, ?, ?)"
+            );
+            logStmt.setString(1, riskName);
+            logStmt.setString(2, action);
+            logStmt.setString(3, details);
+            logStmt.executeUpdate();
+            System.out.println("Действие с риском записано в лог: " + riskName + " - " + action);
+        } catch (SQLException e) {
+            System.err.println("Error logging risk action: " + e.getMessage());
+            e.printStackTrace();
+        } finally {
+            if (localConnection != null) {
+                try {
+                    localConnection.close();
+                } catch (SQLException e) {
+                    System.err.println("Ошибка при закрытии соединения в logRiskAction: " + e.getMessage());
+                }
+            }
         }
     }
 
     private void uploadToPostgreSQL() {
+        Connection localConnection = null;
         try {
-            dbConnection.createStatement().execute("TRUNCATE TABLE project_metrics, stages, risks");
+            localConnection = DriverManager.getConnection(DB_URL, DB_USER, DB_PASSWORD);
+            localConnection.setAutoCommit(false);
 
-            String metricsSql = "INSERT INTO project_metrics (total_time, total_cost, mitigation_strategy, mitigation_budget) VALUES (?, ?, ?, ?)";
-            PreparedStatement metricsStmt = dbConnection.prepareStatement(metricsSql);
+            // Очистка таблиц
+            localConnection.prepareStatement("DELETE FROM project_metrics").executeUpdate();
+            localConnection.prepareStatement("DELETE FROM stages").executeUpdate();
+            localConnection.prepareStatement("DELETE FROM risks").executeUpdate();
+
+            // Подготовка массивов для time_results и cost_results
+            Double[] timeResultsArray = timeResults.toArray(new Double[0]);
+            Double[] costResultsArray = costResults.toArray(new Double[0]);
+            Array timeResultsSqlArray = localConnection.createArrayOf("float8", timeResultsArray);
+            Array costResultsSqlArray = localConnection.createArrayOf("float8", costResultsArray);
+
+            // Вставка в project_metrics
+            PreparedStatement metricsStmt = localConnection.prepareStatement(
+                "INSERT INTO project_metrics (total_time, total_cost, mitigation_strategy, mitigation_budget, time_results, cost_results, time_90th_percentile, cost_90th_percentile, time_threshold, cost_threshold, time_exceed_probability, cost_exceed_probability, time_std_dev, cost_std_dev, time_confidence_lower, time_confidence_upper, cost_confidence_lower, cost_confidence_upper, target_time, target_cost, time_target_probability, cost_target_probability, base_cost, contingency_reserve, contingency_reserve_used, schedule_variance, cost_variance) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            );
             metricsStmt.setDouble(1, totalTime);
             metricsStmt.setDouble(2, totalCost);
-            metricsStmt.setString(3, mitigationStrategy);
+            metricsStmt.setString(3, mitigationStrategy != null ? mitigationStrategy : "N/A");
             metricsStmt.setDouble(4, mitigationBudget);
+            metricsStmt.setArray(5, timeResultsSqlArray);
+            metricsStmt.setArray(6, costResultsSqlArray);
+            metricsStmt.setDouble(7, time90thPercentile);
+            metricsStmt.setDouble(8, cost90thPercentile);
+            metricsStmt.setDouble(9, timeThreshold);
+            metricsStmt.setDouble(10, costThreshold);
+            metricsStmt.setDouble(11, timeExceedProbability);
+            metricsStmt.setDouble(12, costExceedProbability);
+            metricsStmt.setDouble(13, timeStdDev);
+            metricsStmt.setDouble(14, costStdDev);
+            metricsStmt.setDouble(15, timeConfidenceLower);
+            metricsStmt.setDouble(16, timeConfidenceUpper);
+            metricsStmt.setDouble(17, costConfidenceLower);
+            metricsStmt.setDouble(18, costConfidenceUpper);
+            metricsStmt.setDouble(19, targetTime);
+            metricsStmt.setDouble(20, targetCost);
+            metricsStmt.setDouble(21, timeTargetProbability);
+            metricsStmt.setDouble(22, costTargetProbability);
+            metricsStmt.setDouble(23, baseCost); // Добавляем base_cost
+            metricsStmt.setDouble(24, contingencyReserve);
+            metricsStmt.setDouble(25, contingencyReserveUsed); // Добавляем contingency_reserve_used
+            metricsStmt.setDouble(26, scheduleVariance); // Добавляем schedule_variance
+            metricsStmt.setDouble(27, costVariance); // Добавляем cost_variance
             metricsStmt.executeUpdate();
 
-            String stageSql = "INSERT INTO stages (name, duration, cost) VALUES (?, ?, ?)";
-            PreparedStatement stageStmt = dbConnection.prepareStatement(stageSql);
+            // Вставка этапов
+            PreparedStatement stageStmt = localConnection.prepareStatement(
+                "INSERT INTO stages (name, duration, cost, dependencies, actual_duration, actual_cost) VALUES (?, ?, ?, ?::jsonb, ?, ?)"
+            );
+            Gson gson = new Gson();
+            System.out.println("Сохраняем этапы в базу данных...");
             for (Stage stage : stages) {
+                System.out.println("Сохранение этапа: " + stage.name + ", duration: " + stage.duration + ", cost: " + stage.cost);
                 stageStmt.setString(1, stage.name);
                 stageStmt.setDouble(2, stage.duration);
                 stageStmt.setDouble(3, stage.cost);
-                stageStmt.executeUpdate();
+                stageStmt.setString(4, gson.toJson(stage.dependencies));
+                stageStmt.setDouble(5, stage.actualDuration);
+                stageStmt.setDouble(6, stage.actualCost);
+                stageStmt.addBatch();
             }
+            int[] stageResults = stageStmt.executeBatch();
+            System.out.println("Добавлено этапов: " + Arrays.stream(stageResults).sum());
 
-            String riskSql = "INSERT INTO risks (name, probability, impact_time, impact_cost, mitigated, strategy) VALUES (?, ?, ?, ?, ?, ?)";
-            PreparedStatement riskStmt = dbConnection.prepareStatement(riskSql);
-            for (Risk risk : risks) {
-                riskStmt.setString(1, risk.name);
-                riskStmt.setDouble(2, risk.probability);
-                riskStmt.setDouble(3, risk.impactTime);
-                riskStmt.setDouble(4, risk.impactCost);
-                riskStmt.setBoolean(5, risk.mitigated);
-                riskStmt.setString(6, risk.strategy);
-                riskStmt.executeUpdate();
-            }
+            // Вставка рисков
+            PreparedStatement riskStmt = localConnection.prepareStatement(
+            	    "INSERT INTO risks (name, probability, impact_time, impact_cost, mitigated, strategy, category, priority, mitigation_cost) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            	);
+            	for (Risk risk : risks) {
+            	    riskStmt.setString(1, risk.name);
+            	    riskStmt.setDouble(2, risk.probability);
+            	    riskStmt.setDouble(3, risk.impactTime);
+            	    riskStmt.setDouble(4, risk.impactCost);
+            	    riskStmt.setBoolean(5, risk.mitigated);
+            	    riskStmt.setString(6, risk.strategy);
+            	    riskStmt.setString(7, risk.category != null ? risk.category : "Не указано");
+            	    riskStmt.setDouble(8, risk.priority);
+            	    riskStmt.setDouble(9, risk.mitigationCost); // Добавляем mitigation_cost
+            	    riskStmt.addBatch();
+            	}
+            
+            int[] riskResults = riskStmt.executeBatch();
+            System.out.println("Добавлено рисков: " + Arrays.stream(riskResults).sum());
+
+            localConnection.commit();
+            System.out.println("Данные успешно загружены в PostgreSQL");
         } catch (SQLException e) {
-            System.out.println("Error uploading to PostgreSQL: " + e.getMessage());
+            System.err.println("Error uploading to PostgreSQL: " + e.getMessage());
             e.printStackTrace();
+            try {
+                if (localConnection != null) localConnection.rollback();
+            } catch (SQLException rollbackEx) {
+                System.err.println("Rollback failed: " + rollbackEx.getMessage());
+            }
+        } finally {
+            try {
+                if (localConnection != null) {
+                    localConnection.setAutoCommit(true);
+                    localConnection.close();
+                }
+            } catch (SQLException e) {
+                System.err.println("Error closing connection: " + e.getMessage());
+            }
         }
     }
 
     public static void main(String[] args) {
         ServerManager server = new ServerManager();
-        server.startServer(); // Теперь оба сервера запускаются здесь
+        server.startServer();
     }
 }]]></Text>
 		</JavaClass>
@@ -637,6 +1540,21 @@ public class ServerManager {
 		</Resource>
 		<Resource>
 			<Path><![CDATA[postgresql-42.6.0.jar]]></Path>
+			<ReferencedFromUserCode>false</ReferencedFromUserCode>
+			<Location>FILE_SYSTEM</Location>
+		</Resource>
+		<Resource>
+			<Path><![CDATA[httpclient-4.5.14.jar]]></Path>
+			<ReferencedFromUserCode>false</ReferencedFromUserCode>
+			<Location>FILE_SYSTEM</Location>
+		</Resource>
+		<Resource>
+			<Path><![CDATA[httpcore-4.4.16.jar]]></Path>
+			<ReferencedFromUserCode>false</ReferencedFromUserCode>
+			<Location>FILE_SYSTEM</Location>
+		</Resource>
+		<Resource>
+			<Path><![CDATA[commons-logging-1.2.jar]]></Path>
 			<ReferencedFromUserCode>false</ReferencedFromUserCode>
 			<Location>FILE_SYSTEM</Location>
 		</Resource>
@@ -675,6 +1593,30 @@ public class ServerManager {
 		<ResourceReference>
 			<PackageName><![CDATA[model]]></PackageName>
 			<ClassName><![CDATA[postgresql-42.6.0.jar]]></ClassName>
+		</ResourceReference>
+		<Imported>true</Imported>
+		<Folder>false</Folder>
+	</ClassPathEntry>
+	<ClassPathEntry>
+		<ResourceReference>
+			<PackageName><![CDATA[model]]></PackageName>
+			<ClassName><![CDATA[httpclient-4.5.14.jar]]></ClassName>
+		</ResourceReference>
+		<Imported>true</Imported>
+		<Folder>false</Folder>
+	</ClassPathEntry>
+	<ClassPathEntry>
+		<ResourceReference>
+			<PackageName><![CDATA[model]]></PackageName>
+			<ClassName><![CDATA[httpcore-4.4.16.jar]]></ClassName>
+		</ResourceReference>
+		<Imported>true</Imported>
+		<Folder>false</Folder>
+	</ClassPathEntry>
+	<ClassPathEntry>
+		<ResourceReference>
+			<PackageName><![CDATA[model]]></PackageName>
+			<ClassName><![CDATA[commons-logging-1.2.jar]]></ClassName>
 		</ResourceReference>
 		<Imported>true</Imported>
 		<Folder>false</Folder>
